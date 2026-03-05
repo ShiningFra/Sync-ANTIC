@@ -1,6 +1,9 @@
 export type Role = 'CIRT' | 'ANNEXE';
 
+export type View = 'LANDING' | 'DASHBOARD' | 'ADMIN_SETTINGS';
+
 export type CategoryId = 
+  | 'accueil'
   | 'scans-vulnerabilite'
   | 'fermeture-comptes'
   | 'veille-informationnelle'
@@ -13,6 +16,7 @@ export interface Category {
   id: CategoryId;
   label: string;
   icon: string;
+  description?: string;
 }
 
 export type DossierStatus = 'PENDING' | 'VALIDATED';
@@ -39,9 +43,17 @@ export interface Dossier {
   validatedBy?: string;
 }
 
+export interface AnnexeAccount {
+  id: string;
+  name: string;
+  annexeId: string; // The complex ID
+  defaultPassword: string;
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   name: string;
   role: Role;
-  location?: string;
+  annexeId?: string;
 }
