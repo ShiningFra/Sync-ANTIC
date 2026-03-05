@@ -1,0 +1,5 @@
+{
+  "name": "Sync ANTIC",
+  "description": "Plateforme collaborative entre le CIRT et les annexes de l'ANTIC pour la gestion et la validation des dossiers de cybersécurité.",
+  "requestFramePermissions": []
+}
