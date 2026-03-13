@@ -14,6 +14,52 @@ import java.time.LocalDateTime;
 @Entity
 public class Dossier {
 
+@Id
+@GeneratedValue(strategy = GenerationType.IDENTITY)
+private Long id;
+
+private String title;
+
+private String description;
+
+@ManyToOne
+private Category category;
+
+@ManyToOne
+private User createdBy;
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public Category getCategory() {
+        return category;
+    }
+
+    public User getCreatedBy() {
+        return createdBy;
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getValidatedAt() {
+        return validatedAt;
+    }
+
     public void setId(Long id) {
         this.id = id;
     }
@@ -46,24 +92,11 @@ public class Dossier {
         this.validatedAt = validatedAt;
     }
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@Enumerated(EnumType.STRING)
+private Status status;
 
-    private String title;
+private LocalDateTime createdAt;
 
-    private String description;
+private LocalDateTime validatedAt;
 
-    @ManyToOne
-    private Category category;
-
-    @ManyToOne
-    private User createdBy;
-
-    @Enumerated(EnumType.STRING)
-    private Status status;
-
-    private LocalDateTime createdAt;
-
-    private LocalDateTime validatedAt;
 }

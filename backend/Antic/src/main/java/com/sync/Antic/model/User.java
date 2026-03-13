@@ -27,8 +27,8 @@ public class User {
         return password;
     }
 
-    public RoleType getRole() {
-        return role;
+    public RoleType getRolet() {
+        return rolet;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -45,7 +45,10 @@ private String username;
 private String password;
 
 @Enumerated(EnumType.STRING)
-private RoleType role;
+private RoleType rolet;
+
+@ManyToOne
+private Role role;
 
     public void setId(Long id) {
         this.id = id;
@@ -59,8 +62,16 @@ private RoleType role;
         this.password = password;
     }
 
-    public void setRole(RoleType role) {
+    public void setRolet(RoleType rolet) {
+        this.rolet = rolet;
+    }
+
+    public void setRole(Role role) {
         this.role = role;
+    }
+
+    public Role getRole() {
+        return role;
     }
 
     public void setCreatedAt(LocalDateTime createdAt) {

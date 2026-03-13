@@ -13,25 +13,11 @@ import jakarta.persistence.*;
 @Entity
 public class FileAttachment {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@Id
+@GeneratedValue(strategy = GenerationType.IDENTITY)
+private Long id;
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getFileName() {
-        return fileName;
-    }
-
-    public String getFilePath() {
-        return filePath;
-    }
-
-    public Dossier getDossier() {
-        return dossier;
-    }
+private String fileName;
 
     public void setId(Long id) {
         this.id = id;
@@ -49,10 +35,25 @@ public class FileAttachment {
         this.dossier = dossier;
     }
 
-    private String fileName;
+    public Long getId() {
+        return id;
+    }
 
-    private String filePath;
+    public String getFileName() {
+        return fileName;
+    }
 
-    @ManyToOne
-    private Dossier dossier;
+    public String getFilePath() {
+        return filePath;
+    }
+
+    public Dossier getDossier() {
+        return dossier;
+    }
+
+private String filePath;
+
+@ManyToOne
+private Dossier dossier;
+
 }

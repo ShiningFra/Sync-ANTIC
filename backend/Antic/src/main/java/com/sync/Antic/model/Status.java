@@ -11,8 +11,8 @@ package com.sync.Antic.model;
 
 public enum Status {
 
-    PENDING,
-    VALIDATED,
-    REJECTED
+PENDING,
+VALIDATED,
+REJECTED
 
 }

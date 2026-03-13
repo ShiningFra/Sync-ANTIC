@@ -7,6 +7,7 @@ package com.sync.Antic.service;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import java.util.Date;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -16,7 +17,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class JwtService {
 
-private String secret="antic-secret-key";
+@Value("${jwt.secret}")
+private String secret;
 
 public String generateToken(String username){
 

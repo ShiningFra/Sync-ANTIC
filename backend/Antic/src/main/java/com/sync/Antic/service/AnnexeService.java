@@ -38,7 +38,7 @@ user.setUsername(code);
 
 user.setPassword(encoder.encode("default123"));
 
-user.setRole(RoleType.ANNEXE);
+user.setRolet(RoleType.ANNEXE);
 
 user.setCreatedAt(LocalDateTime.now());
 
