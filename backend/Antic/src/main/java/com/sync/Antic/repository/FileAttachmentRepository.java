@@ -13,5 +13,5 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FileAttachmentRepository extends JpaRepository<FileAttachment,Long> {
-    List<FileAttachment> findByDossierId(Long id);
+    List<FileAttachment> findByDossierId(Long dossierId);
 }

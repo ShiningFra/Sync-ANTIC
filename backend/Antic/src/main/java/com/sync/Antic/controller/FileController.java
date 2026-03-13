@@ -13,6 +13,7 @@ import java.util.List;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -82,9 +83,10 @@ public ResponseEntity<Resource> preview(@PathVariable Long id) throws Exception 
     Resource resource = new UrlResource(path.toUri());
 
     return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION,
-                    "inline; filename=\"" + file.getFileName() + "\"")
-            .body(resource);
+        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+                "inline; filename=\"" + file.getFileName() + "\"")
+        .body(resource);
 }
 
 @GetMapping("/dossier/{id}")

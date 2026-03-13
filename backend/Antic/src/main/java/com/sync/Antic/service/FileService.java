@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.*;
+import java.util.UUID;
 
 @Service
 public class FileService {
@@ -31,9 +32,13 @@ public class FileService {
 
         }
 
-        Path filePath = dossierFolder.resolve(file.getOriginalFilename());
+        String original = file.getOriginalFilename();
 
-        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+String safeName = UUID.randomUUID() + "_" + original;
+
+Path filePath = dossierFolder.resolve(safeName);
+
+Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
         
         
 
