@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CATEGORIES, MOCK_DOSSIERS, ANTENNES, MOCK_USERS } from '../constants';
-import { CategoryId, Dossier, User, UserRole, Antenne, DossierStatus, Category } from '../types';
+import { CategoryId, Dossier, User, UserRole, Antenne, DossierStatus, Category, StepActor } from '../types';
 
 const IconMap: Record<string, React.ElementType> = {
   Home,
@@ -76,6 +76,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<DossierStatus | 'ALL'>('ALL');
+  const [isAddingStep, setIsAddingStep] = useState(false);
+  const [newStepLabel, setNewStepLabel] = useState('');
+  const [newStepDescription, setNewStepDescription] = useState('');
+  const [newStepActor, setNewStepActor] = useState<StepActor>('REALIZATION');
 
   // Permission Helpers
   const isSuperAdmin = user.role === 'SUPER_ADMIN';
@@ -162,15 +166,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   const handleArchive = (id: string) => {
+    const archiveCategory = categories.find(c => c.label.toLowerCase().includes('archive'));
     setDossiers(prev => prev.map(d => 
       d.id === id ? { 
         ...d, 
         status: 'ARCHIVED', 
         archivedAt: new Date().toISOString(), 
-        archivedBy: user.name 
+        archivedBy: user.name,
+        categoryId: archiveCategory ? archiveCategory.id : d.categoryId
       } : d
     ));
     setSelectedDossier(null);
+  };
+
+  const handleAddStep = (dossierId: string) => {
+    if (!newStepLabel) return;
+    
+    const newStep: any = {
+      id: Math.random().toString(36).substr(2, 9),
+      label: newStepLabel,
+      description: newStepDescription,
+      requiredFrom: newStepActor,
+      status: 'PENDING',
+      attachments: []
+    };
+
+    setDossiers(prev => prev.map(d => 
+      d.id === dossierId ? { ...d, steps: [...(d.steps || []), newStep] } : d
+    ));
+
+    // Update selected dossier to reflect changes
+    setSelectedDossier(prev => prev ? { ...prev, steps: [...(prev.steps || []), newStep] } : null);
+    
+    setIsAddingStep(false);
+    setNewStepLabel('');
+    setNewStepDescription('');
   };
 
   const handleCreateUser = (newUser: Omit<User, 'id'>) => {
@@ -207,7 +237,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
             <nav className="hidden md:flex items-center gap-1">
               <HeaderTab active={activeTab === 'dossiers'} onClick={() => setActiveTab('dossiers')} icon={<FileText size={16} />} label="Dossiers" />
-              <HeaderTab active={activeTab === 'archives'} onClick={() => setActiveTab('archives')} icon={<Archive size={16} />} label="Archives" />
+              {!categories.some(c => c.label.toLowerCase().includes('archive')) && (
+                <HeaderTab active={activeTab === 'archives'} onClick={() => setActiveTab('archives')} icon={<Archive size={16} />} label="Archives" />
+              )}
               {canManageUsers && (
                 <HeaderTab active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<Users size={16} />} label="Utilisateurs" />
               )}
@@ -243,7 +275,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
         {/* Category Bar */}
         {(activeTab === 'dossiers' || activeTab === 'archives') && (
-          <div className="bg-white/5 border-t border-white/10 overflow-x-auto no-scrollbar">
+          <div className="bg-white/5 border-t border-white/10 overflow-x-auto">
             <div className="max-w-[1800px] mx-auto px-4 sm:px-8 py-2 flex items-center gap-2">
               {categories.map(cat => {
                 const Icon = IconMap[cat.icon] || Home;
@@ -273,11 +305,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col">
-        {(activeTab === 'dossiers' || activeTab === 'archives') && (
-          <>
-            {/* Filters Bar */}
-            <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4 shrink-0">
+      <main className="flex-1 overflow-hidden flex flex-col relative">
+        <AnimatePresence mode="wait">
+          {selectedDossier ? (
+            <DossierDetailView 
+              key="detail"
+              dossier={selectedDossier}
+              user={user}
+              onClose={() => setSelectedDossier(null)}
+              onValidate={handleValidate}
+              onArchive={handleArchive}
+              onAddStep={() => setIsAddingStep(true)}
+            />
+          ) : (
+            <motion.div 
+              key="main-content"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
+              {(activeTab === 'dossiers' || activeTab === 'archives') && (
+                <>
+                  {/* Filters Bar */}
+                  <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4 shrink-0">
               <div className="max-w-[1800px] mx-auto flex flex-col lg:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full lg:max-w-md">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -290,7 +341,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                   />
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto overflow-x-auto no-scrollbar pb-1">
+                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto overflow-x-auto pb-1">
                   <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
                     <Filter size={14} className="text-slate-400" />
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtres:</span>
@@ -595,18 +646,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             </div>
           </div>
         )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Modals */}
       <AnimatePresence>
-        {selectedDossier && (
-          <DossierDetailModal 
-            dossier={selectedDossier} 
-            user={user}
-            onClose={() => setSelectedDossier(null)}
-            onValidate={handleValidate}
-            onArchive={handleArchive}
-          />
+        {isAddingStep && selectedDossier && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAddingStep(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl p-8">
+              <h3 className="text-2xl font-black text-slate-900 mb-6 uppercase tracking-tighter">Nouvelle Étape</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Libellé de l'étape</label>
+                  <input 
+                    type="text" 
+                    value={newStepLabel}
+                    onChange={(e) => setNewStepLabel(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-antic-blue outline-none transition-all"
+                    placeholder="Ex: Validation technique"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Description</label>
+                  <textarea 
+                    value={newStepDescription}
+                    onChange={(e) => setNewStepDescription(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-antic-blue outline-none transition-all h-24 resize-none"
+                    placeholder="Détails sur les documents attendus..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Responsable</label>
+                  <select 
+                    value={newStepActor}
+                    onChange={(e) => setNewStepActor(e.target.value as StepActor)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-antic-blue outline-none transition-all"
+                  >
+                    <option value="REALIZATION">Équipe Réalisation (Antenne)</option>
+                    <option value="SUPERVISION">Équipe Supervision (CIRT)</option>
+                  </select>
+                </div>
+                <div className="pt-4 flex gap-3">
+                  <button onClick={() => setIsAddingStep(false)} className="flex-1 px-6 py-3 rounded-xl text-xs font-black text-slate-500 hover:bg-slate-100 transition-all uppercase tracking-widest">Annuler</button>
+                  <button onClick={() => handleAddStep(selectedDossier.id)} className="flex-1 bg-antic-blue text-white px-6 py-3 rounded-xl text-xs font-black hover:bg-blue-700 transition-all uppercase tracking-widest">Ajouter</button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
         {isUploadModalOpen && (
           <UploadDossierModal 
@@ -703,7 +792,7 @@ const DossierColumn: React.FC<{ title: string; icon: React.ReactNode; dossiers: 
         {dossiers.length}
       </span>
     </div>
-    <div className="flex-1 bg-white border-x border-b border-slate-200 rounded-b-[32px] p-4 space-y-4 overflow-y-auto no-scrollbar shadow-inner">
+    <div className="flex-1 bg-white border-x border-b border-slate-200 rounded-b-[32px] p-4 space-y-4 overflow-y-auto shadow-inner">
       {dossiers.length > 0 ? (
         dossiers.map(d => (
           <motion.div 
@@ -744,117 +833,172 @@ const DossierColumn: React.FC<{ title: string; icon: React.ReactNode; dossiers: 
   </section>
 );
 
-const DossierDetailModal: React.FC<{ 
+const DossierDetailView: React.FC<{ 
   dossier: Dossier; 
   user: User;
   onClose: () => void; 
   onValidate: (id: string) => void;
   onArchive: (id: string) => void;
-}> = ({ dossier, user, onClose, onValidate, onArchive }) => {
+  onAddStep: () => void;
+}> = ({ dossier, user, onClose, onValidate, onArchive, onAddStep }) => {
   const canValidate = (user.role === 'SUPER_ADMIN' || user.role === 'CIRT_ADMIN') && dossier.status === 'PENDING';
   const canArchive = (user.role === 'SUPER_ADMIN' || user.role === 'CIRT_ADMIN' || user.role === 'ANTENNE_DIRECTOR') && dossier.status === 'VALIDATED';
+  const canAddStep = user.role === 'SUPER_ADMIN' || user.role === 'CIRT_ADMIN' || user.role === 'ANTENNE_DIRECTOR';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
-      <motion.div layoutId={dossier.id} className="relative w-full max-w-5xl bg-white rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+    <motion.div 
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="flex-1 bg-white flex flex-col overflow-y-auto"
+    >
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-100 p-6 sm:p-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+        <div className="flex items-center gap-6">
+          <button onClick={onClose} className="p-3 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-slate-900">
+            <X size={24} />
+          </button>
           <div>
             <div className="flex items-center gap-3 mb-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dossier #{dossier.id}</span>
               <StatusBadge status={dossier.status} />
             </div>
-            <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">{dossier.title}</h3>
+            <h3 className="text-3xl sm:text-4xl font-black text-slate-900 uppercase tracking-tighter leading-none">{dossier.title}</h3>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-slate-200 rounded-full transition-colors">
-            <X size={24} className="text-slate-500" />
-          </button>
         </div>
+        
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          {canAddStep && (
+            <button onClick={onAddStep} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-100 text-slate-900 px-6 py-4 rounded-2xl text-xs font-black hover:bg-slate-200 transition-all uppercase tracking-widest">
+              <Plus size={18} /> Nouvelle Étape
+            </button>
+          )}
+          {canArchive && (
+            <button onClick={() => onArchive(dossier.id)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-4 rounded-2xl text-xs font-black hover:bg-slate-800 transition-all uppercase tracking-widest">
+              <Archive size={18} /> Archiver
+            </button>
+          )}
+          {canValidate && (
+            <button onClick={() => onValidate(dossier.id)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-antic-blue text-white px-8 py-4 rounded-2xl text-xs font-black shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 uppercase tracking-widest">
+              <Check size={20} /> Valider
+            </button>
+          )}
+        </div>
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-8">
-              <section>
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Description</h4>
-                <div className="bg-slate-50 p-6 rounded-[24px] border border-slate-100 text-sm text-slate-600 font-medium leading-relaxed">
-                  {dossier.description}
-                </div>
-              </section>
+      <div className="p-6 sm:p-10 max-w-[1400px] w-full mx-auto space-y-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+          <div className="lg:col-span-2 space-y-12">
+            <section>
+              <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-antic-blue"></div>
+                Description du Dossier
+              </h4>
+              <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-100 text-base text-slate-600 font-medium leading-relaxed shadow-inner">
+                {dossier.description}
+              </div>
+            </section>
 
-              <section>
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Étapes de Traitement</h4>
-                <div className="space-y-4">
-                  {dossier.steps?.map((step, idx) => (
-                    <div key={step.id} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${step.status === 'COMPLETED' ? 'bg-antic-green text-white' : 'bg-slate-100 text-slate-400'}`}>
-                            {step.status === 'COMPLETED' ? <Check size={16} /> : idx + 1}
-                          </div>
-                          <div>
-                            <h4 className="font-black text-slate-900 uppercase tracking-tight">{step.label}</h4>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Requis de: {step.requiredFrom === 'SUPERVISION' ? 'Équipe Supervision (CIRT)' : 'Équipe Réalisation (Antenne)'}</p>
+            <section>
+              <div className="flex items-center justify-between mb-8">
+                <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-antic-gold"></div>
+                  Étapes de Traitement ({dossier.steps?.length || 0})
+                </h4>
+              </div>
+              
+              <div className="relative space-y-6 before:absolute before:left-6 before:top-8 before:bottom-8 before:w-0.5 before:bg-slate-100">
+                {dossier.steps?.map((step, idx) => (
+                  <div key={step.id} className="relative pl-16 group">
+                    <div className={`absolute left-0 top-2 w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black shadow-lg transition-all z-10 ${step.status === 'COMPLETED' ? 'bg-antic-green text-white scale-110' : 'bg-white border-2 border-slate-100 text-slate-400 group-hover:border-antic-blue group-hover:text-antic-blue'}`}>
+                      {step.status === 'COMPLETED' ? <Check size={20} /> : idx + 1}
+                    </div>
+                    
+                    <div className="bg-white border border-slate-200 rounded-[32px] p-8 shadow-sm hover:shadow-xl transition-all border-l-4 border-l-transparent hover:border-l-antic-blue">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+                        <div>
+                          <h4 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-1">{step.label}</h4>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest ${step.requiredFrom === 'SUPERVISION' ? 'bg-blue-50 text-antic-blue' : 'bg-purple-50 text-purple-600'}`}>
+                              {step.requiredFrom === 'SUPERVISION' ? 'Supervision' : 'Réalisation'}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">• {step.status === 'COMPLETED' ? 'Terminé' : 'En attente'}</span>
                           </div>
                         </div>
-                        <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${step.status === 'COMPLETED' ? 'bg-green-50 text-antic-green' : 'bg-amber-50 text-amber-600'}`}>
-                          {step.status === 'COMPLETED' ? 'Terminé' : 'En attente'}
-                        </span>
+                        {step.status === 'PENDING' && (
+                          <button className="flex items-center gap-2 bg-slate-50 hover:bg-antic-blue hover:text-white px-4 py-2 rounded-xl text-[10px] font-black text-slate-600 uppercase tracking-widest transition-all">
+                            <Upload size={14} />
+                            Fournir
+                          </button>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-500 mb-4">{step.description}</p>
+                      
+                      <p className="text-sm text-slate-500 font-medium mb-6 leading-relaxed">{step.description}</p>
                       
                       {step.attachments.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {step.attachments.map(at => (
-                            <a key={at.id} href={at.url} className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-100 transition-all">
-                              <Paperclip size={12} />
-                              {at.name} ({at.size})
+                            <a key={at.id} href={at.url} className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-antic-blue transition-all group/file">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 group-hover/file:text-antic-blue shadow-sm">
+                                  <File size={20} />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-black text-slate-700 truncate max-w-[150px]">{at.name}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{at.size}</p>
+                                </div>
+                              </div>
+                              <Download size={14} className="text-slate-300 group-hover/file:text-antic-blue" />
                             </a>
                           ))}
                         </div>
                       )}
-
-                      {step.status === 'PENDING' && (
-                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end">
-                          <button className="text-[10px] font-black text-antic-blue uppercase tracking-widest hover:underline flex items-center gap-1">
-                            <Upload size={12} />
-                            Fournir un document
-                          </button>
-                        </div>
-                      )}
                     </div>
-                  ))}
-                </div>
-              </section>
+                  </div>
+                ))}
+                
+                {(!dossier.steps || dossier.steps.length === 0) && (
+                  <div className="pl-16 py-12 text-center sm:text-left">
+                    <p className="text-slate-400 font-medium italic">Aucune étape définie pour ce dossier.</p>
+                  </div>
+                )}
+              </div>
+            </section>
 
-              <section>
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Pièces Jointes Générales ({dossier.attachments.length})</h4>
-                <div className="grid grid-cols-1 gap-3">
-                  {dossier.attachments.map(file => (
-                    <div key={file.id} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-2xl hover:border-antic-blue transition-colors group">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-antic-blue group-hover:text-white transition-colors">
-                          <File size={24} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-black text-slate-800">{file.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{file.size} • {file.type.split('/')[1].toUpperCase()}</p>
-                        </div>
+            <section>
+              <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+                Documents Généraux ({dossier.attachments.length})
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {dossier.attachments.map(file => (
+                  <div key={file.id} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[28px] hover:border-antic-blue transition-all group shadow-sm hover:shadow-lg">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-antic-blue group-hover:text-white transition-all shadow-inner">
+                        <File size={28} />
                       </div>
-                      <div className="flex gap-2">
-                        <button className="p-3 text-slate-400 hover:text-antic-blue hover:bg-blue-50 rounded-xl transition-all"><Eye size={18} /></button>
-                        <button className="p-3 text-slate-400 hover:text-antic-blue hover:bg-blue-50 rounded-xl transition-all"><Download size={18} /></button>
+                      <div>
+                        <p className="text-sm font-black text-slate-800 mb-1">{file.name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{file.size} • {file.type.split('/')[1].toUpperCase()}</p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </section>
-            </div>
+                    <div className="flex gap-2">
+                      <button className="p-3 text-slate-400 hover:text-antic-blue hover:bg-blue-50 rounded-xl transition-all"><Eye size={18} /></button>
+                      <button className="p-3 text-slate-400 hover:text-antic-blue hover:bg-blue-50 rounded-xl transition-all"><Download size={18} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
 
-            <div className="space-y-6">
-              <InfoCard title="Origine" icon={<MapPin size={14} />}>
+          <div className="space-y-8">
+            <div className="sticky top-40 space-y-8">
+              <InfoCard title="Informations" icon={<MapPin size={14} />}>
                 <InfoRow label="Antenne" value={dossier.antenneName} />
                 <InfoRow label="Créé par" value={MOCK_USERS.find(u => u.id === dossier.createdBy)?.name || 'Inconnu'} />
-                <InfoRow label="Date" value={new Date(dossier.createdAt).toLocaleDateString('fr-FR')} />
+                <InfoRow label="Date de création" value={new Date(dossier.createdAt).toLocaleDateString('fr-FR')} />
+                <InfoRow label="Catégorie" value={CATEGORIES.find(c => c.id === dossier.categoryId)?.label || 'Inconnue'} />
               </InfoCard>
 
               {dossier.status === 'VALIDATED' && (
@@ -870,25 +1014,28 @@ const DossierDetailModal: React.FC<{
                   <InfoRow label="Le" value={new Date(dossier.archivedAt!).toLocaleDateString('fr-FR')} />
                 </InfoCard>
               )}
+
+              <div className="bg-slate-900 rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-antic-gold/20 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2"></div>
+                <h5 className="text-xs font-black uppercase tracking-widest text-antic-gold mb-4">Statistiques</h5>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-end">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progression</span>
+                    <span className="text-xl font-black">{Math.round(((dossier.steps?.filter(s => s.status === 'COMPLETED').length || 0) / (dossier.steps?.length || 1)) * 100)}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-antic-gold transition-all duration-1000" 
+                      style={{ width: `${((dossier.steps?.filter(s => s.status === 'COMPLETED').length || 0) / (dossier.steps?.length || 1)) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
-        <div className="p-8 border-t border-slate-100 flex justify-end gap-4 bg-slate-50">
-          <button onClick={onClose} className="px-6 py-3 text-sm font-black text-slate-500 hover:bg-slate-200 rounded-2xl transition-all uppercase tracking-widest">Fermer</button>
-          {canArchive && (
-            <button onClick={() => onArchive(dossier.id)} className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl text-sm font-black hover:bg-slate-800 transition-all uppercase tracking-widest">
-              <Archive size={18} /> Archiver
-            </button>
-          )}
-          {canValidate && (
-            <button onClick={() => onValidate(dossier.id)} className="flex items-center gap-2 bg-antic-blue text-white px-8 py-3 rounded-2xl text-sm font-black shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 uppercase tracking-widest">
-              <Check size={20} /> Valider
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </div>
+      </div>
+    </motion.div>
   );
 };
 
@@ -942,7 +1089,7 @@ const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose
           <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Nouveau Dossier</h3>
           <button onClick={onClose} className="p-3 hover:bg-slate-200 rounded-full transition-colors"><X size={24} className="text-slate-500" /></button>
         </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto no-scrollbar">
+        <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Titre du dossier</label>
             <input type="text" required placeholder="Ex: Scan vulnérabilité Réseau X" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue transition-all" value={title} onChange={(e) => setTitle(e.target.value)} />
