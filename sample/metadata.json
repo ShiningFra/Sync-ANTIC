@@ -1,5 +1,5 @@
 {
   "name": "Sync ANTIC",
-  "description": "Plateforme collaborative entre le CIRT et les annexes de l'ANTIC pour la gestion et la validation des dossiers de cybersécurité.",
+  "description": "Plateforme de supervision et de collaboration sécurisée de l'ANTIC. Gestion hiérarchique des dossiers de cybersécurité entre le CIRT et les antennes régionales.",
   "requestFramePermissions": []
 }

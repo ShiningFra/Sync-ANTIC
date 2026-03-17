@@ -1,25 +1,38 @@
-export type Role = 'CIRT' | 'ANNEXE';
+export type UserRole = 
+  | 'SUPER_ADMIN'      // Directeur du CIRT
+  | 'CIRT_ADMIN'       // Admins inférieurs CIRT
+  | 'CIRT_SECONDARY'   // Comptes secondaires CIRT
+  | 'ANTENNE_DIRECTOR' // Directeur d'antenne
+  | 'ANTENNE_SIMPLE';  // Compte simple antenne
 
-export type View = 'LANDING' | 'DASHBOARD' | 'ADMIN_SETTINGS';
+export type AffiliationType = 'CIRT' | 'ANTENNE';
 
-export type CategoryId = 
-  | 'accueil'
-  | 'scans-vulnerabilite'
-  | 'fermeture-comptes'
-  | 'veille-informationnelle'
-  | 'collecte-actifs'
-  | 'base-points-focaux'
-  | 'requisitions'
-  | 'authentification-preuves';
+export type View = 'LANDING' | 'DASHBOARD' | 'ARCHIVES';
+
+export type CategoryId = string;
 
 export interface Category {
   id: CategoryId;
   label: string;
   icon: string;
   description?: string;
+  createdBy?: string;
 }
 
-export type DossierStatus = 'PENDING' | 'VALIDATED';
+export type DossierStatus = 'PENDING' | 'VALIDATED' | 'ARCHIVED';
+
+export type StepActor = 'SUPERVISION' | 'REALIZATION';
+
+export interface DossierStep {
+  id: string;
+  label: string;
+  description: string;
+  requiredFrom: StepActor;
+  status: 'PENDING' | 'COMPLETED';
+  attachments: Attachment[];
+  completedAt?: string;
+  completedBy?: string;
+}
 
 export interface Attachment {
   id: string;
@@ -34,26 +47,35 @@ export interface Dossier {
   title: string;
   description: string;
   categoryId: CategoryId;
-  annexeId: string;
-  annexeName: string;
-  createdAt: string;
+  antenneId: string;
+  antenneName: string;
+  createdAt: string; // ISO string
+  year: number;
+  month: number;
+  day: number;
   status: DossierStatus;
-  attachments: Attachment[];
+  attachments: Attachment[]; // General attachments
+  steps: DossierStep[];
   validatedAt?: string;
   validatedBy?: string;
+  createdBy: string; // User ID
+  archivedAt?: string;
+  archivedBy?: string;
 }
 
-export interface AnnexeAccount {
+export interface Antenne {
   id: string;
   name: string;
-  annexeId: string; // The complex ID
-  defaultPassword: string;
-  createdAt: string;
+  location: string;
 }
 
 export interface User {
   id: string;
+  username: string;
   name: string;
-  role: Role;
-  annexeId?: string;
+  role: UserRole;
+  affiliation: AffiliationType;
+  antenneId?: string; // If affiliation is ANTENNE
+  allowedCategories?: CategoryId[]; // For CIRT_SECONDARY
+  createdBy?: string; // Parent user ID
 }

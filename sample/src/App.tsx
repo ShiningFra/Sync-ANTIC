@@ -2,23 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { LandingPage } from './components/LandingPage';
 import { Dashboard } from './components/Dashboard';
-import { AdminSettings } from './components/AdminSettings';
-import { Role, View } from './types';
+import { User, View } from './types';
 
 export default function App() {
   const [view, setView] = useState<View>('LANDING');
-  const [user, setUser] = useState<{ role: Role; annexeId?: string } | null>(null);
-  const [isAdminSettingsOpen, setIsAdminSettingsOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
 
-  const handleLogin = (role: Role, annexeId?: string) => {
-    setUser({ role, annexeId });
+  const handleLogin = (user: User) => {
+    setUser(user);
     setView('DASHBOARD');
   };
 
   const handleLogout = () => {
     setUser(null);
     setView('LANDING');
-    setIsAdminSettingsOpen(false);
   };
 
   useEffect(() => {
@@ -28,7 +25,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-100 selection:bg-yellow-400 selection:text-slate-900">
+    <div className="min-h-screen bg-slate-100 selection:bg-antic-gold selection:text-slate-900">
       <AnimatePresence mode="wait">
         {view === 'LANDING' && (
           <LandingPage key="landing" onLogin={handleLogin} />
@@ -36,19 +33,8 @@ export default function App() {
         {view === 'DASHBOARD' && user && (
           <Dashboard 
             key="dashboard"
-            role={user.role} 
-            annexeId={user.annexeId}
+            user={user}
             onLogout={handleLogout}
-            onOpenAdminSettings={() => setIsAdminSettingsOpen(true)}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isAdminSettingsOpen && (
-          <AdminSettings 
-            key="admin-settings"
-            onClose={() => setIsAdminSettingsOpen(false)} 
           />
         )}
       </AnimatePresence>

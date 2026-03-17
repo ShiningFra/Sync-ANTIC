@@ -4,34 +4,37 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-antic-blue: #0056b3;
+  --color-antic-green: #28a745;
+  --color-antic-gold: #ffc107;
 }
 
 @layer base {
   /* Custom Scrollbar Styling */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #f1f5f9; /* slate-100 */
+    background: #f8fafc;
     border-radius: 10px;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #94a3b8; /* slate-400 */
+    background: #cbd5e1;
     border-radius: 10px;
-    border: 2px solid #f1f5f9;
+    border: 2px solid #f8fafc;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #eab308; /* yellow-500 */
+    background: var(--color-antic-blue);
   }
 
   /* For Firefox */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #94a3b8 #f1f5f9;
+    scrollbar-color: #cbd5e1 #f8fafc;
   }
 
   /* Hide scrollbar for Chrome, Safari and Opera */
