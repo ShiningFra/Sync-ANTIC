@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Shield, 
   FileText, 
@@ -54,6 +54,105 @@ interface DashboardProps {
 
 type Tab = 'dossiers' | 'archives' | 'users' | 'antennes' | 'categories';
 
+const RecapView: React.FC<{
+  dossiers: Dossier[];
+  antennes: Antenne[];
+  selectedCategoryId: CategoryId;
+  filterYear: string;
+  filterMonth: string;
+}> = ({ dossiers, antennes, selectedCategoryId, filterYear, filterMonth }) => {
+  const stats = useMemo(() => {
+    return antennes.map(antenne => {
+      const antenneDossiers = dossiers.filter(d => 
+        d.antenneId === antenne.id && 
+        d.categoryId === selectedCategoryId &&
+        (filterYear === 'all' || d.year === parseInt(filterYear)) &&
+        (filterMonth === 'all' || d.month === parseInt(filterMonth))
+      );
+
+      return {
+        antenne,
+        total: antenneDossiers.length,
+        pending: antenneDossiers.filter(d => d.status === 'PENDING').length,
+        validated: antenneDossiers.filter(d => d.status === 'VALIDATED').length,
+        archived: antenneDossiers.filter(d => d.status === 'ARCHIVED').length,
+      };
+    });
+  }, [antennes, dossiers, selectedCategoryId, filterYear, filterMonth]);
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="bg-white/80 backdrop-blur-md p-8 rounded-[40px] border border-slate-200 shadow-xl mb-8">
+        <div className="flex items-center gap-4 mb-2">
+          <div className="w-12 h-12 bg-antic-blue text-white rounded-2xl flex items-center justify-center shadow-lg">
+            <Database size={24} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Récapitulatif par Antenne</h2>
+            <p className="text-sm text-slate-500 font-medium">Statistiques détaillées des traitements pour la catégorie sélectionnée</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 pb-12">
+        {stats.map(({ antenne, total, pending, validated, archived }) => (
+          <motion.div 
+            key={antenne.id} 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white p-8 rounded-[40px] border-2 border-slate-100 hover:border-antic-blue shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-antic-blue/5 rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-antic-blue/10 transition-all"></div>
+            
+            <div className="flex items-center gap-4 mb-8 relative z-10">
+              <div className="w-14 h-14 bg-slate-50 text-antic-blue rounded-2xl flex items-center justify-center group-hover:bg-antic-blue group-hover:text-white transition-all duration-300 shadow-inner">
+                <MapPin size={28} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none mb-1">{antenne.name}</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{antenne.location}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4 relative z-10">
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group-hover:bg-white transition-all">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Dossiers</span>
+                <span className="text-lg font-black text-slate-900">{total}</span>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-2">
+                <div className="flex items-center justify-between p-3 bg-orange-50/50 rounded-xl border border-orange-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div>
+                    <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">En cours</span>
+                  </div>
+                  <span className="text-sm font-black text-orange-700">{pending}</span>
+                </div>
+                
+                <div className="flex items-center justify-between p-3 bg-green-50/50 rounded-xl border border-green-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    <span className="text-[10px] font-bold text-green-600 uppercase tracking-widest">Validés</span>
+                  </div>
+                  <span className="text-sm font-black text-green-700">{validated}</span>
+                </div>
+                
+                <div className="flex items-center justify-between p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Archivés</span>
+                  </div>
+                  <span className="text-sm font-black text-blue-700">{archived}</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState<Tab>('dossiers');
   const [selectedCategoryId, setSelectedCategoryId] = useState<CategoryId>('accueil');
@@ -76,6 +175,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<DossierStatus | 'ALL'>('ALL');
+  const [showRecap, setShowRecap] = useState(false);
   const [isAddingStep, setIsAddingStep] = useState(false);
   const [newStepLabel, setNewStepLabel] = useState('');
   const [newStepDescription, setNewStepDescription] = useState('');
@@ -96,6 +196,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const canArchive = isSuperAdmin || isCirtAdmin || isAntenneDirector;
   const canValidate = isSuperAdmin || isCirtAdmin;
   const canCreateDossier = isAntenneAffiliated || isCirtAffiliated;
+
+  const baseDossiersForStats = useMemo(() => {
+    let base = dossiers;
+    if (isAntenneSimple) {
+      base = base.filter(d => d.createdBy === user.id);
+    } else if (isAntenneDirector) {
+      base = base.filter(d => d.antenneId === user.antenneId);
+    }
+    if (isCirtSecondary && user.allowedCategories) {
+      base = base.filter(d => user.allowedCategories?.includes(d.categoryId));
+    }
+    return base;
+  }, [dossiers, isAntenneSimple, isAntenneDirector, isCirtSecondary, user]);
+
+  useEffect(() => {
+    if (selectedCategoryId === 'accueil') {
+      setShowRecap(false);
+    }
+  }, [selectedCategoryId]);
 
   // Filtered dossiers based on user role and filters
   const filteredDossiers = useMemo(() => {
@@ -222,8 +341,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
       {/* Header */}
-      <header className="bg-antic-blue text-white shadow-xl z-50 shrink-0">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-8 h-20 flex items-center justify-between gap-4">
+      <header className="bg-antic-blue text-white shadow-xl z-50 shrink-0 relative overflow-hidden">
+        {/* Subtle Header Pattern */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M0 0 L100 100 M100 0 L0 100" stroke="white" strokeWidth="0.1" fill="none" />
+          </svg>
+        </div>
+        <div className="max-w-[1800px] mx-auto px-4 sm:px-8 h-20 flex items-center justify-between gap-4 relative z-10">
           <div className="flex items-center gap-4 sm:gap-8">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-antic-blue shadow-lg">
@@ -373,6 +498,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                     ]}
                   />
 
+                  {selectedCategoryId !== 'accueil' && (
+                    <button 
+                      onClick={() => setShowRecap(!showRecap)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
+                        showRecap 
+                          ? 'bg-antic-blue border-antic-blue text-white shadow-lg' 
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-antic-blue hover:text-antic-blue'
+                      }`}
+                    >
+                      <Database size={14} />
+                      {showRecap ? 'Voir la Liste' : 'Récapitulatif'}
+                    </button>
+                  )}
+
                   {canCreateDossier && activeTab === 'dossiers' && (
                     <button 
                       onClick={() => setIsUploadModalOpen(true)}
@@ -387,11 +526,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             </div>
 
             {/* Dossiers Grid */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8">
-              <div className="max-w-[1800px] mx-auto">
-                {selectedCategoryId === 'accueil' ? (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 relative">
+              {/* Subtle Background Pattern */}
+              <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0">
+                <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <defs>
+                    <pattern id="dashboard-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                      <circle cx="1" cy="1" r="1" fill="currentColor" className="text-antic-blue" />
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#dashboard-grid)" />
+                </svg>
+              </div>
+
+              <div className="max-w-[1800px] mx-auto relative z-10">
+                {showRecap && selectedCategoryId !== 'accueil' ? (
+                  <RecapView 
+                    dossiers={baseDossiersForStats}
+                    antennes={isCirtAffiliated || isSuperAdmin ? antennes : antennes.filter(a => a.id === user.antenneId)}
+                    selectedCategoryId={selectedCategoryId}
+                    filterYear={filterYear}
+                    filterMonth={filterMonth}
+                  />
+                ) : selectedCategoryId === 'accueil' ? (
                   <div className="space-y-12">
                     <div className="bg-slate-900 rounded-[40px] p-8 sm:p-16 text-white relative overflow-hidden shadow-2xl">
+                      {/* Hero Background Image */}
+                      <div className="absolute inset-0 z-0">
+                        <img 
+                          src="https://picsum.photos/seed/tech-city/1200/600" 
+                          alt="Tech Background" 
+                          className="w-full h-full object-cover opacity-20"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent"></div>
+                      </div>
                       <div className="absolute top-0 right-0 w-1/2 h-full bg-antic-gold/10 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/4"></div>
                       <div className="relative z-10">
                         <h2 className="text-4xl sm:text-6xl font-black mb-6 tracking-tighter leading-none">

@@ -26,17 +26,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 relative overflow-y-auto">
-      {/* Background patterns */}
-      <div className="absolute top-0 left-0 w-full h-full opacity-5 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-antic-blue rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-antic-green rounded-full blur-[120px]"></div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 relative overflow-y-auto">
+      {/* Background Image with Overlay */}
+      <div className="absolute inset-0 z-0">
+        <img 
+          src="https://picsum.photos/seed/cameroon/1920/1080" 
+          alt="Background" 
+          className="w-full h-full object-cover opacity-20"
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-antic-blue/80 via-slate-900/90 to-slate-900"></div>
+      </div>
+
+      {/* Tech Illustration / Pattern Overlay */}
+      <div className="absolute inset-0 z-0 opacity-10 pointer-events-none overflow-hidden">
+        <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <defs>
+            <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="white" strokeWidth="0.1"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+        </svg>
       </div>
 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-white rounded-[32px] shadow-2xl shadow-slate-200 border border-slate-100 overflow-hidden relative z-10"
+        className="w-full max-w-md bg-white rounded-[32px] shadow-2xl shadow-black/50 border border-white/10 overflow-hidden relative z-10"
       >
         <div className="bg-antic-blue p-8 text-center relative">
           <div className="absolute top-0 left-0 w-full h-full overflow-hidden opacity-10">
