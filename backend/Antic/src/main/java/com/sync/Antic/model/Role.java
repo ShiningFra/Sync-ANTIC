@@ -11,12 +11,13 @@ import jakarta.persistence.*;
  * @author berna
  */
 @Entity
+@Table(name = "roles")
 public class Role {
 
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-private String name;
-
+    @Column(unique = true, nullable = false)
+    private String name;
 }

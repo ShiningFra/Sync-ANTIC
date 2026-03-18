@@ -5,18 +5,22 @@
 package com.sync.Antic.model;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 /**
  *
  * @author berna
  */
 @Entity
-public class Category {
+@Table(name = "antennes")
+public class Antenne {
 
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-private String name;
+    @Column(unique = true, nullable = false)
+    private String name;
 
+    private LocalDateTime createdAt = LocalDateTime.now();
 }

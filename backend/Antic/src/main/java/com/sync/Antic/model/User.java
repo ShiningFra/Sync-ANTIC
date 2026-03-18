@@ -12,72 +12,31 @@ import java.time.LocalDateTime;
  * @author berna
  */
 @Entity
-@Table(name="users")
+@Table(name = "users")
 public class User {
 
-    public Long getId() {
-        return id;
-    }
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    public String getUsername() {
-        return username;
-    }
+    private String name;
 
-    public String getPassword() {
-        return password;
-    }
+    @Column(unique = true)
+    private String email;
 
-    public RoleType getRolet() {
-        return rolet;
-    }
+    private String password;
 
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
+    @ManyToOne
+    @JoinColumn(name = "role_id")
+    private Role role;
 
-@Id
-@GeneratedValue(strategy=GenerationType.IDENTITY)
-private Long id;
+    @ManyToOne
+    @JoinColumn(name = "antenne_id")
+    private Antenne antenne;
 
-@Column(unique=true)
-private String username;
+    @ManyToOne
+    @JoinColumn(name = "created_by")
+    private User createdBy;
 
-private String password;
-
-@Enumerated(EnumType.STRING)
-private RoleType rolet;
-
-@ManyToOne
-private Role role;
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public void setRolet(RoleType rolet) {
-        this.rolet = rolet;
-    }
-
-    public void setRole(Role role) {
-        this.role = role;
-    }
-
-    public Role getRole() {
-        return role;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-private LocalDateTime createdAt;
-
+    private LocalDateTime createdAt = LocalDateTime.now();
 }
