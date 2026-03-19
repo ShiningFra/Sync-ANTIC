@@ -45,4 +45,4 @@ public class JwtService {
     private Key getKey() {
         return Keys.hmacShaKeyFor(SECRET.getBytes());
     }
-}
+} 
