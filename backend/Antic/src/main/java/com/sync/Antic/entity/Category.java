@@ -2,26 +2,28 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
  */
-package com.sync.Antic.model;
+package com.sync.Antic.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 /**
  *
  * @author berna
  */
 @Entity
-@Table(name = "permissions_categories",
-       uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "category_id"}))
-public class PermissionCategory {
+@Table(name = "categories")
+public class Category {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    private User user;
+    private String name;
 
     @ManyToOne
-    private Category category;
+    @JoinColumn(name = "created_by")
+    private User createdBy;
+
+    private LocalDateTime createdAt = LocalDateTime.now();
 }

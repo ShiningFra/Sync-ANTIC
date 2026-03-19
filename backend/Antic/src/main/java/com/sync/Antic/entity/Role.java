@@ -2,18 +2,17 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
  */
-package com.sync.Antic.model;
+package com.sync.Antic.entity;
 
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
 
 /**
  *
  * @author berna
  */
 @Entity
-@Table(name = "antennes")
-public class Antenne {
+@Table(name = "roles")
+public class Role {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,5 +21,19 @@ public class Antenne {
     @Column(unique = true, nullable = false)
     private String name;
 
-    private LocalDateTime createdAt = LocalDateTime.now();
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getName() {
+        return name;
+    }
 }
