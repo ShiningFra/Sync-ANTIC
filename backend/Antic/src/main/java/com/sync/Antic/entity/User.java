@@ -4,6 +4,7 @@
  */
 package com.sync.Antic.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -23,7 +24,8 @@ public class User {
 
     @Column(unique = true)
     private String email;
-
+    
+    @JsonIgnore
     private String password;
 
     @ManyToOne
