@@ -4,6 +4,7 @@
  */
 package com.sync.Antic.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -30,6 +31,7 @@ public class Dossier {
 
     @ManyToOne
     @JoinColumn(name = "created_by")
+    @JsonIgnore
     private User createdBy;
 
     @ManyToOne
