@@ -30,4 +30,52 @@ public class Etape {
     private User createdBy;
 
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public void setDossier(Dossier dossier) {
+        this.dossier = dossier;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public void setCreatedBy(User createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public Dossier getDossier() {
+        return dossier;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public User getCreatedBy() {
+        return createdBy;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }
