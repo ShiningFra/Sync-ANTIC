@@ -20,29 +20,38 @@ public class JwtService {
 
     private final String SECRET = "super_secret_key_change_me";
 
+    private Key getKey() {
+        return Keys.hmacShaKeyFor(SECRET.getBytes());
+    }
+
     public String generateToken(User user) {
         return Jwts.builder()
                 .setSubject(user.getEmail())
                 .claim("role", user.getRole().getName())
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60 * 24))
+                .setExpiration(new Date(System.currentTimeMillis() + 86400000)) // 24h
                 .signWith(getKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     public String extractEmail(String token) {
-        return getClaims(token).getSubject();
+        return extractClaims(token).getSubject();
     }
 
-    private Claims getClaims(String token) {
+    public boolean isValid(String token) {
+        try {
+            extractClaims(token);
+            return true;
+        } catch (JwtException e) {
+            return false;
+        }
+    }
+
+    private Claims extractClaims(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(getKey())
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
     }
-
-    private Key getKey() {
-        return Keys.hmacShaKeyFor(SECRET.getBytes());
-    }
-} 
+}

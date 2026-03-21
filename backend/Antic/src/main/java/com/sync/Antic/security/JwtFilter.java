@@ -45,6 +45,12 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         String token = header.substring(7);
+
+        if (!jwtService.isValid(token)) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         String email = jwtService.extractEmail(token);
 
         User user = userRepository.findByEmail(email).orElse(null);

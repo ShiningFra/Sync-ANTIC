@@ -9,6 +9,7 @@ import java.nio.file.*;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -23,21 +24,32 @@ public class FileStorageService {
 
     public String saveFile(MultipartFile file) {
 
+        String type = file.getContentType();
+
+        if (type == null ||
+            (!type.equals("application/pdf") &&
+            !type.startsWith("image/"))) {
+            throw new RuntimeException("Invalid file type");
+        }
+
+        String cleanName = StringUtils.cleanPath(file.getOriginalFilename());
+
+        String fileName = UUID.randomUUID() + "_" + cleanName;
+
+        Path path = Paths.get(uploadDir).toAbsolutePath();
+
         try {
-            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-
-            Path path = Paths.get(uploadDir).toAbsolutePath().normalize();
-
             Files.createDirectories(path);
 
             Path target = path.resolve(fileName);
 
-            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(file.getInputStream(), target,
+                       StandardCopyOption.REPLACE_EXISTING);
 
             return fileName;
 
         } catch (IOException e) {
-            throw new RuntimeException("File upload failed");
+            throw new RuntimeException("Upload failed");
         }
     }
 }

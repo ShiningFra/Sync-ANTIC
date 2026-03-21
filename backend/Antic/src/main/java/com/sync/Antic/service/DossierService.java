@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -157,5 +158,9 @@ public class DossierService {
         }
 
         return result;
+    }
+    
+    public Page<Dossier> getDossiers(Pageable pageable) {
+        return dossierRepository.findAll(pageable);
     }
 }
