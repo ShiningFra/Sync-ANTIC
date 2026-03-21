@@ -23,6 +23,10 @@ public class Document {
     private Etape etape;
 
     private String fileUrl;
+    
+    private String fileName;
+
+    private String fileType;
 
     @ManyToOne
     private User uploadedBy;
@@ -39,6 +43,14 @@ public class Document {
 
     public void setFileUrl(String fileUrl) {
         this.fileUrl = fileUrl;
+    }
+
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
+    }
+
+    public void setFileType(String fileType) {
+        this.fileType = fileType;
     }
 
     public void setUploadedBy(User uploadedBy) {
@@ -59,6 +71,14 @@ public class Document {
 
     public String getFileUrl() {
         return fileUrl;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+
+    public String getFileType() {
+        return fileType;
     }
 
     public User getUploadedBy() {

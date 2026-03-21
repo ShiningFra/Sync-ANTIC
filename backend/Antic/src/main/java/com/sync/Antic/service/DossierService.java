@@ -8,7 +8,9 @@ import com.sync.Antic.entity.*;
 import com.sync.Antic.repository.DossierRepository;
 import com.sync.Antic.security.SecurityUtils;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -138,5 +140,22 @@ public class DossierService {
             return cb.equal(root.get("createdBy").get("id"),
                             user.getId());
         };
+    }
+    
+    public Map<Long, Map<Status, Long>> getStats(Long categoryId) {
+
+        List<StatsProjection> data =
+                dossierRepository.getStatsByCategory(categoryId);
+
+        Map<Long, Map<Status, Long>> result = new HashMap<>();
+
+        for (StatsProjection row : data) {
+
+            result
+                .computeIfAbsent(row.getAntenneId(), k -> new HashMap<>())
+                .put(Status.valueOf(row.getStatus()), row.getCount());
+        }
+
+        return result;
     }
 }

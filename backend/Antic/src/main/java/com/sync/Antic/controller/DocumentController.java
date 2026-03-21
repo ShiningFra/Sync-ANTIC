@@ -8,6 +8,7 @@ import com.sync.Antic.entity.Document;
 import com.sync.Antic.service.DocumentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  *
@@ -20,10 +21,11 @@ public class DocumentController {
     @Autowired
     private DocumentService documentService;
 
-    @PostMapping("/{etapeId}")
-    public Document upload(@PathVariable Long etapeId,
-                           @RequestBody Document doc) {
-
-        return documentService.addDocument(etapeId, doc);
-    }
+     @PostMapping(value = "/{etapeId}", consumes = "multipart/form-data")
+        public Document upload(
+                @PathVariable Long etapeId,
+                @RequestParam("file") MultipartFile file
+        ) {
+            return documentService.upload(etapeId, file);
+        }
 }

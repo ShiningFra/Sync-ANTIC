@@ -12,6 +12,9 @@ import com.sync.Antic.entity.*;
 import org.springframework.data.jpa.repository.*;
 
 import java.util.List;
+import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.repository.query.Param;
 
 public interface DossierRepository extends JpaRepository<Dossier, Long>,
         JpaSpecificationExecutor<Dossier> {
@@ -30,4 +33,17 @@ public interface DossierRepository extends JpaRepository<Dossier, Long>,
 
     // Combo (ex: antenne + status)
     List<Dossier> findByAntenneIdAndStatus(Long antenneId, Status status);
+    
+    @Query("""
+    SELECT d.antenne.id as antenneId,
+        d.status as status,
+        COUNT(d) as count
+    FROM Dossier d
+    WHERE (:categoryId IS NULL OR d.category.id = :categoryId)
+    GROUP BY d.antenne.id, d.status
+    """)
+    List<StatsProjection> getStatsByCategory(@Param("categoryId") Long categoryId);
+    
+    @Override
+    Page<Dossier> findAll(Specification spec, Pageable pageable);
 }

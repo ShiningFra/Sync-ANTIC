@@ -9,6 +9,7 @@ import com.sync.Antic.repository.*;
 import com.sync.Antic.security.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  *
@@ -22,6 +23,32 @@ public class DocumentService {
 
     @Autowired
     private EtapeRepository etapeRepository;
+    
+    @Autowired
+    private FileStorageService fileStorageService;
+    
+    public Document upload(Long etapeId, MultipartFile file) {
+
+        User user = SecurityUtils.getCurrentUserDetails().getUser();
+
+        Etape etape = etapeRepository.findById(etapeId)
+                .orElseThrow();
+
+        if (!canAccessDossier(user, etape.getDossier())) {
+            throw new RuntimeException("Unauthorized");
+        }
+
+        String fileName = fileStorageService.saveFile(file);
+
+        Document doc = new Document();
+        doc.setFileName(file.getOriginalFilename());
+        doc.setFileType(file.getContentType());
+        doc.setFileUrl("/files/" + fileName);
+        doc.setEtape(etape);
+        doc.setUploadedBy(user);
+
+        return documentRepository.save(doc);
+    }
 
     public Document addDocument(Long etapeId, Document doc) {
 
