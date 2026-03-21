@@ -4,8 +4,9 @@
  */
 package com.sync.Antic.controller;
 
-import com.sync.Antic.entity.Dossier;
+import com.sync.Antic.entity.*;
 import com.sync.Antic.service.DossierService;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -43,5 +44,22 @@ public class DossierController {
     @PutMapping("/{id}/archive")
     public Dossier archive(@PathVariable Long id) {
         return dossierService.archiveDossier(id);
+    }
+    
+    @GetMapping("/filter")
+    public List<Dossier> filter(
+            @RequestParam(required = false) Long antenneId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Status status,
+            @RequestParam(required = false) String start,
+            @RequestParam(required = false) String end
+    ){
+        return dossierService.filterDossiers(
+                antenneId,
+                categoryId,
+                status,
+                start != null ? LocalDateTime.parse(start) : null,
+                end != null ? LocalDateTime.parse(end) : null
+        );
     }
 }

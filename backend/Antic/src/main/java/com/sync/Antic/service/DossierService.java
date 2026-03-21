@@ -10,6 +10,7 @@ import com.sync.Antic.security.SecurityUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 /**
@@ -96,5 +97,46 @@ public class DossierService {
         d.setStatus(Status.ARCHIVE);
 
         return dossierRepository.save(d);
+    }
+    
+    public List<Dossier> filterDossiers(Long antenneId,
+                                    Long categoryId,
+                                    Status status,
+                                    LocalDateTime start,
+                                    LocalDateTime end) {
+
+        User user = SecurityUtils.getCurrentUserDetails().getUser();
+
+        Specification<Dossier> spec = Specification
+                .where(DossierSpecification.hasAntenne(antenneId))
+                .and(DossierSpecification.hasCategory(categoryId))
+                .and(DossierSpecification.hasStatus(status))
+                .and(DossierSpecification.createdAfter(start))
+                .and(DossierSpecification.createdBefore(end));
+    
+        // 🔐 Appliquer sécurité
+        spec = spec.and(applySecurityFilter(user));
+
+        return dossierRepository.findAll(spec);
+    }
+    
+    private Specification<Dossier> applySecurityFilter(User user) {
+
+        String role = user.getRole().getName();
+
+        return (root, query, cb) -> {
+
+            if (role.equals("super_admin") || role.equals("admin_cirt")) {
+                return cb.conjunction();
+            }
+
+            if (role.equals("directeur_antenne")) {
+                return cb.equal(root.get("antenne").get("id"),
+                                user.getAntenne().getId());
+            }
+
+            return cb.equal(root.get("createdBy").get("id"),
+                            user.getId());
+        };
     }
 }

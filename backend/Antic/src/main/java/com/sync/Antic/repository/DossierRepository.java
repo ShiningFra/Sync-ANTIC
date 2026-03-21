@@ -9,11 +9,12 @@ package com.sync.Antic.repository;
  * @author berna
  */
 import com.sync.Antic.entity.*;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.*;
 
 import java.util.List;
 
-public interface DossierRepository extends JpaRepository<Dossier, Long> {
+public interface DossierRepository extends JpaRepository<Dossier, Long>,
+        JpaSpecificationExecutor<Dossier> {
 
     // Tous les dossiers d'une antenne
     List<Dossier> findByAntenneId(Long antenneId);
