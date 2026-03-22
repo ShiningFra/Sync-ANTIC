@@ -1,0 +1,21 @@
+body {
+  font-family: Arial;
+  background: #0b1e3c;
+  color: white;
+}
+.login {
+  display:flex;
+  flex-direction:column;
+  width:300px;
+  margin:auto;
+  margin-top:100px;
+}
+input, button {
+  margin:5px 0;
+  padding:10px;
+}
+button {
+  background:#00aaff;
+  color:white;
+  border:none;
+}
