@@ -16,11 +16,12 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+      // Force .ts before .js so src/api.ts wins over any stale api.js
+      extensions: ['.mts', '.ts', '.tsx', '.mjs', '.js', '.jsx', '.json'],
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
-        // Forward /auth, /dossiers, /users, etc. → Spring Boot backend
         '/auth':       { target: apiUrl, changeOrigin: true },
         '/dossiers':   { target: apiUrl, changeOrigin: true },
         '/users':      { target: apiUrl, changeOrigin: true },
