@@ -12,6 +12,7 @@ import java.net.MalformedURLException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -30,6 +31,9 @@ public class DocumentController {
     @Autowired
     private DocumentService documentService;
 
+    @Value("${file.upload-dir}")
+    private String uploadDir;
+
      @PostMapping(value = "/{etapeId}", consumes = "multipart/form-data")
         public Document upload(
                 @PathVariable Long etapeId,
@@ -45,7 +49,7 @@ public class DocumentController {
 
         // 👉 vérifier si user a accès au document
 
-        Path path = Paths.get("uploads").resolve(name);
+        Path path = Paths.get(uploadDir).toAbsolutePath().resolve(name);
 
         Resource resource = new UrlResource(path.toUri());
 

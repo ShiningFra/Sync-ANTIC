@@ -151,10 +151,14 @@ public class DossierService {
         Map<Long, Map<Status, Long>> result = new HashMap<>();
 
         for (StatsProjection row : data) {
-
-            result
-                .computeIfAbsent(row.getAntenneId(), k -> new HashMap<>())
-                .put(Status.valueOf(row.getStatus()), row.getCount());
+            try {
+                Status s = Status.valueOf(row.getStatus());
+                result
+                    .computeIfAbsent(row.getAntenneId(), k -> new HashMap<>())
+                    .put(s, row.getCount());
+            } catch (IllegalArgumentException ignored) {
+                // skip unknown status values
+            }
         }
 
         return result;

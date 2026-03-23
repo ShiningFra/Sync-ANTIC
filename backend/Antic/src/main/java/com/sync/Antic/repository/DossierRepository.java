@@ -45,5 +45,5 @@ public interface DossierRepository extends JpaRepository<Dossier, Long>,
     List<StatsProjection> getStatsByCategory(@Param("categoryId") Long categoryId);
     
     @Override
-    Page<Dossier> findAll(Specification spec, Pageable pageable);
+    Page<Dossier> findAll(Specification<Dossier> spec, Pageable pageable);
 }

@@ -8,6 +8,7 @@ import com.sync.Antic.entity.User;
 import com.sync.Antic.repository.*;
 import com.sync.Antic.security.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 /**
@@ -23,11 +24,17 @@ public class UserService {
     @Autowired
     private RoleRepository roleRepository;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     public User createUser(User newUser) {
 
         User current = SecurityUtils.getCurrentUserDetails().getUser();
 
         String role = current.getRole().getName();
+
+        // Hash password before saving
+        newUser.setPassword(passwordEncoder.encode(newUser.getPassword()));
 
         // 🔥 SUPER ADMIN
         if (role.equals("super_admin")) {
@@ -42,8 +49,11 @@ public class UserService {
             return userRepository.save(newUser);
         }
 
-        // 🔥 DIRECTEUR ANTENNE
+        // 🔥 DIRECTEUR ANTENNE → peut créer uniquement des agents de son antenne
         if (role.equals("directeur_antenne")) {
+            if (!newUser.getRole().getName().equals("agent")) {
+                throw new RuntimeException("Directeur antenne can only create agents");
+            }
             newUser.setAntenne(current.getAntenne());
             return userRepository.save(newUser);
         }

@@ -9,6 +9,7 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import java.security.Key;
 import java.util.Date;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -18,10 +19,18 @@ import org.springframework.stereotype.Service;
 @Service
 public class JwtService {
 
-    private final String SECRET = "super_secret_key_change_me";
+    @Value("${jwt.secret}")
+    private String SECRET;
 
     private Key getKey() {
-        return Keys.hmacShaKeyFor(SECRET.getBytes());
+        // HMAC-SHA256 requires at least 32 bytes (256 bits)
+        byte[] keyBytes = SECRET.getBytes();
+        if (keyBytes.length < 32) {
+            byte[] padded = new byte[32];
+            System.arraycopy(keyBytes, 0, padded, 0, keyBytes.length);
+            return Keys.hmacShaKeyFor(padded);
+        }
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 
     public String generateToken(User user) {

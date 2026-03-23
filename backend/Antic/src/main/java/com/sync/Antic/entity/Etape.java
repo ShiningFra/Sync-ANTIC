@@ -4,6 +4,7 @@
  */
 package com.sync.Antic.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -19,6 +20,7 @@ public class Etape {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @JsonIgnore
     @ManyToOne
     private Dossier dossier;
 

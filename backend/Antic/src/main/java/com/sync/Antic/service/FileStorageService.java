@@ -32,7 +32,11 @@ public class FileStorageService {
             throw new RuntimeException("Invalid file type");
         }
 
-        String cleanName = StringUtils.cleanPath(file.getOriginalFilename());
+        String originalName = file.getOriginalFilename();
+        if (originalName == null || originalName.isBlank()) {
+            originalName = "file";
+        }
+        String cleanName = StringUtils.cleanPath(originalName);
 
         String fileName = UUID.randomUUID() + "_" + cleanName;
 

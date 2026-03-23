@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   Shield, 
   FileText, 
@@ -30,11 +30,15 @@ import {
   Trash2,
   Lock,
   Menu,
-  Paperclip
+  Paperclip,
+  Loader,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CATEGORIES, MOCK_DOSSIERS, ANTENNES, MOCK_USERS } from '../constants';
+import { CATEGORIES as STATIC_CATEGORIES, ANTENNES as STATIC_ANTENNES } from '../constants';
 import { CategoryId, Dossier, User, UserRole, Antenne, DossierStatus, Category, StepActor } from '../types';
+import * as api from '../api';
 
 const IconMap: Record<string, React.ElementType> = {
   Home,
@@ -156,12 +160,14 @@ const RecapView: React.FC<{
 export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState<Tab>('dossiers');
   const [selectedCategoryId, setSelectedCategoryId] = useState<CategoryId>('accueil');
-  const [dossiers, setDossiers] = useState<Dossier[]>(MOCK_DOSSIERS);
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [antennes, setAntennes] = useState<Antenne[]>(ANTENNES);
-  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const [dossiers, setDossiers] = useState<Dossier[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [antennes, setAntennes] = useState<Antenne[]>(STATIC_ANTENNES);
+  const [categories, setCategories] = useState<Category[]>(STATIC_CATEGORIES);
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState('');
+
   // Filters
   const [filterAntenne, setFilterAntenne] = useState<string>('all');
   const [filterYear, setFilterYear] = useState<string>('all');
@@ -180,6 +186,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [newStepLabel, setNewStepLabel] = useState('');
   const [newStepDescription, setNewStepDescription] = useState('');
   const [newStepActor, setNewStepActor] = useState<StepActor>('REALIZATION');
+
+  // ─── Load initial data from API ─────────────────────────────────────────────
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setApiError('');
+    try {
+      const [dossiersData, antennesData, categoriesData] = await Promise.all([
+        api.getDossiers(),
+        api.getAntennes(),
+        api.getCategories(),
+      ]);
+      setDossiers(dossiersData);
+      setAntennes(antennesData);
+      // Merge backend categories with static ones (keep Accueil header)
+      const backendCats = categoriesData.map(c => ({ ...c, icon: 'FileText' }));
+      const accueil = STATIC_STATIC_CATEGORIES.find(c => c.id === 'accueil');
+      setCategories(accueil ? [accueil, ...backendCats] : backendCats);
+    } catch (err: any) {
+      setApiError(err?.message ?? 'Impossible de contacter le serveur.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   // Permission Helpers
   const isSuperAdmin = user.role === 'SUPER_ADMIN';
@@ -272,64 +303,69 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     return base;
   }, [dossiers, user, selectedCategoryId, searchQuery, filterAntenne, filterYear, filterMonth, filterDay, activeTab]);
 
-  const handleValidate = (id: string) => {
-    setDossiers(prev => prev.map(d => 
-      d.id === id ? { 
-        ...d, 
-        status: 'VALIDATED', 
-        validatedAt: new Date().toISOString(), 
-        validatedBy: user.name 
-      } : d
-    ));
-    setSelectedDossier(null);
+  const handleValidate = async (id: string) => {
+    try {
+      const updated = await api.validateDossier(id);
+      setDossiers(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
+      setSelectedDossier(null);
+    } catch (err: any) {
+      alert(err?.message ?? 'Erreur lors de la validation.');
+    }
   };
 
-  const handleArchive = (id: string) => {
-    const archiveCategory = categories.find(c => c.label.toLowerCase().includes('archive'));
-    setDossiers(prev => prev.map(d => 
-      d.id === id ? { 
-        ...d, 
-        status: 'ARCHIVED', 
-        archivedAt: new Date().toISOString(), 
-        archivedBy: user.name,
-        categoryId: archiveCategory ? archiveCategory.id : d.categoryId
-      } : d
-    ));
-    setSelectedDossier(null);
+  const handleArchive = async (id: string) => {
+    try {
+      const updated = await api.archiveDossier(id);
+      setDossiers(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
+      setSelectedDossier(null);
+    } catch (err: any) {
+      alert(err?.message ?? 'Erreur lors de l\'archivage.');
+    }
   };
 
-  const handleAddStep = (dossierId: string) => {
+  const handleAddStep = async (dossierId: string) => {
     if (!newStepLabel) return;
-    
-    const newStep: any = {
-      id: Math.random().toString(36).substr(2, 9),
-      label: newStepLabel,
-      description: newStepDescription,
-      requiredFrom: newStepActor,
-      status: 'PENDING',
-      attachments: []
-    };
-
-    setDossiers(prev => prev.map(d => 
-      d.id === dossierId ? { ...d, steps: [...(d.steps || []), newStep] } : d
-    ));
-
-    // Update selected dossier to reflect changes
-    setSelectedDossier(prev => prev ? { ...prev, steps: [...(prev.steps || []), newStep] } : null);
-    
-    setIsAddingStep(false);
-    setNewStepLabel('');
-    setNewStepDescription('');
+    try {
+      const created = await api.createEtape(dossierId, {
+        title: newStepLabel,
+        description: newStepDescription,
+      });
+      const newStep: any = {
+        id: String(created.id),
+        label: created.title,
+        description: created.description,
+        requiredFrom: newStepActor,
+        status: 'PENDING',
+        attachments: [],
+      };
+      setDossiers(prev => prev.map(d =>
+        d.id === dossierId ? { ...d, steps: [...(d.steps || []), newStep] } : d
+      ));
+      setSelectedDossier(prev =>
+        prev ? { ...prev, steps: [...(prev.steps || []), newStep] } : null
+      );
+      setIsAddingStep(false);
+      setNewStepLabel('');
+      setNewStepDescription('');
+    } catch (err: any) {
+      alert(err?.message ?? 'Erreur lors de la création de l\'étape.');
+    }
   };
 
-  const handleCreateUser = (newUser: Omit<User, 'id'>) => {
-    const u: User = {
-      ...newUser,
-      id: `u-${Math.random().toString(36).substr(2, 9)}`,
-      createdBy: user.id
-    };
-    setUsers(prev => [...prev, u]);
-    setIsUserModalOpen(false);
+  const handleCreateUser = async (newUser: Omit<User, 'id'> & { password?: string; roleId?: number; antenneId?: number }) => {
+    try {
+      const created = await api.createUser({
+        name: newUser.name,
+        email: newUser.username,
+        password: (newUser as any).password ?? 'ChangeMe123!',
+        roleId: (newUser as any).roleId ?? 4,
+        antenneId: (newUser as any).antenneId,
+      });
+      setUsers(prev => [...prev, created]);
+      setIsUserModalOpen(false);
+    } catch (err: any) {
+      alert(err?.message ?? 'Erreur lors de la création de l\'utilisateur.');
+    }
   };
 
   const handleDeleteUser = (id: string) => {
@@ -340,6 +376,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      {/* API Error banner */}
+      {apiError && (
+        <div className="bg-red-600 text-white px-6 py-3 flex items-center justify-between gap-4 z-50 shrink-0">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <AlertCircle size={16} />
+            {apiError}
+          </div>
+          <button onClick={loadData} className="flex items-center gap-1 text-xs font-black bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-all">
+            <RefreshCw size={12} /> Réessayer
+          </button>
+        </div>
+      )}
       {/* Header */}
       <header className="bg-antic-blue text-white shadow-xl z-50 shrink-0 relative overflow-hidden">
         {/* Subtle Header Pattern */}
@@ -527,6 +575,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
             {/* Dossiers Grid */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-8 relative">
+              {loading && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 backdrop-blur-sm">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader size={32} className="animate-spin text-antic-blue" />
+                    <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Chargement…</p>
+                  </div>
+                </div>
+              )}
               {/* Subtle Background Pattern */}
               <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0">
                 <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -610,14 +666,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <div className="w-12 h-12 bg-antic-blue text-white rounded-2xl flex items-center justify-center shadow-lg">
-                            {React.createElement(IconMap[CATEGORIES.find(c => c.id === selectedCategoryId)?.icon || 'Home'], { size: 24 })}
+                            {React.createElement(IconMap[STATIC_CATEGORIES.find(c => c.id === selectedCategoryId)?.icon || 'Home'], { size: 24 })}
                           </div>
                           <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">
-                            {CATEGORIES.find(c => c.id === selectedCategoryId)?.label}
+                            {STATIC_CATEGORIES.find(c => c.id === selectedCategoryId)?.label}
                           </h2>
                         </div>
                         <p className="text-slate-500 font-medium ml-1">
-                          {CATEGORIES.find(c => c.id === selectedCategoryId)?.description}
+                          {STATIC_CATEGORIES.find(c => c.id === selectedCategoryId)?.description}
                         </p>
                       </div>
                     </div>
@@ -722,7 +778,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                             <div className="flex items-center gap-2">
                               <span className={`w-2 h-2 rounded-full ${u.affiliation === 'CIRT' ? 'bg-antic-blue' : 'bg-antic-gold'}`}></span>
                               <span className="text-xs font-bold text-slate-600">
-                                {u.affiliation} {u.antenneId ? `(${ANTENNES.find(a => a.id === u.antenneId)?.name})` : ''}
+                                {u.affiliation} {u.antenneId ? `(${STATIC_ANTENNES.find(a => a.id === u.antenneId)?.name})` : ''}
                               </span>
                             </div>
                           </td>
@@ -869,21 +925,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         {isUploadModalOpen && (
           <UploadDossierModal 
             user={user}
-            categoryId={selectedCategoryId === 'accueil' ? 'scans-vulnerabilite' : selectedCategoryId}
+            categoryId={selectedCategoryId === 'accueil' ? (categories.find(c => c.id !== 'accueil')?.id ?? '') : selectedCategoryId}
             onClose={() => setIsUploadModalOpen(false)}
-            onUpload={(d) => {
-              const dossier: Dossier = {
-                ...d,
-                id: `D-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
-                createdAt: new Date().toISOString(),
-                year: new Date().getFullYear(),
-                month: new Date().getMonth() + 1,
-                day: new Date().getDate(),
-                status: 'PENDING',
-                createdBy: user.id,
-                antenneName: ANTENNES.find(a => a.id === d.antenneId)?.name || 'CIRT Central'
-              };
-              setDossiers(prev => [dossier, ...prev]);
+            onUpload={(d: Dossier) => {
+              setDossiers(prev => [d, ...prev]);
               setIsUploadModalOpen(false);
             }}
           />
@@ -907,9 +952,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         {isCategoryModalOpen && (
           <CreateCategoryModal 
             onClose={() => setIsCategoryModalOpen(false)}
-            onCreate={(c) => {
-              setCategories(prev => [...prev, { ...c, id: c.label.toLowerCase().replace(/\s+/g, '-'), createdBy: user.id }]);
-              setIsCategoryModalOpen(false);
+            onCreate={async (c) => {
+              try {
+                const created = await api.createCategory(c.label);
+                setCategories(prev => [...prev, created]);
+                setIsCategoryModalOpen(false);
+              } catch (err: any) {
+                alert(err?.message ?? 'Erreur lors de la création de la catégorie.');
+              }
             }}
           />
         )}
@@ -1165,9 +1215,9 @@ const DossierDetailView: React.FC<{
             <div className="sticky top-40 space-y-8">
               <InfoCard title="Informations" icon={<MapPin size={14} />}>
                 <InfoRow label="Antenne" value={dossier.antenneName} />
-                <InfoRow label="Créé par" value={MOCK_USERS.find(u => u.id === dossier.createdBy)?.name || 'Inconnu'} />
+                <InfoRow label="Créé par" value={dossier.createdBy || 'Inconnu'} />
                 <InfoRow label="Date de création" value={new Date(dossier.createdAt).toLocaleDateString('fr-FR')} />
-                <InfoRow label="Catégorie" value={CATEGORIES.find(c => c.id === dossier.categoryId)?.label || 'Inconnue'} />
+                <InfoRow label="Catégorie" value={STATIC_CATEGORIES.find(c => c.id === dossier.categoryId)?.label || 'Inconnue'} />
               </InfoCard>
 
               {dossier.status === 'VALIDATED' && (
@@ -1238,16 +1288,26 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
   </div>
 );
 
-const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose: () => void; onUpload: (d: any) => void }> = ({ user, categoryId, onClose, onUpload }) => {
+const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose: () => void; onUpload: (d: Dossier) => void }> = ({ user, categoryId, onClose, onUpload }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [antenneId, setAntenneId] = useState(user.antenneId || ANTENNES[0].id);
+  const [antenneId, setAntenneId] = useState(user.antenneId || STATIC_ANTENNES[0].id);
   const [files, setFiles] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !description) return;
-    onUpload({ title, description, categoryId, antenneId, attachments: files.map((f, i) => ({ id: `new-${i}`, name: f.name, size: `${(f.size / 1024 / 1024).toFixed(1)} MB`, type: f.type, url: '#' })) });
+    setSubmitting(true);
+    try {
+      const created = await api.createDossier({ title, description, categoryId });
+      onUpload(created);
+      onClose();
+    } catch (err: any) {
+      alert(err?.message ?? 'Erreur lors de la création du dossier.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -1266,7 +1326,7 @@ const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose
           <div className="grid grid-cols-2 gap-6">
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Catégorie</label>
-              <div className="px-5 py-3.5 bg-slate-100 border border-slate-200 rounded-2xl text-sm text-slate-500 font-black uppercase tracking-tight">{CATEGORIES.find(c => c.id === categoryId)?.label}</div>
+              <div className="px-5 py-3.5 bg-slate-100 border border-slate-200 rounded-2xl text-sm text-slate-500 font-black uppercase tracking-tight">{STATIC_CATEGORIES.find(c => c.id === categoryId)?.label}</div>
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Antenne</label>
@@ -1276,7 +1336,7 @@ const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose
                 value={antenneId} 
                 onChange={(e) => setAntenneId(e.target.value)}
               >
-                {ANTENNES.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                {STATIC_ANTENNES.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
           </div>
@@ -1299,7 +1359,10 @@ const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose
           </div>
           <div className="pt-4 flex justify-end gap-4">
             <button type="button" onClick={onClose} className="px-6 py-3 text-sm font-black text-slate-500 hover:bg-slate-100 rounded-2xl transition-all uppercase tracking-widest">Annuler</button>
-            <button type="submit" className="bg-antic-blue text-white px-10 py-3 rounded-2xl text-sm font-black shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 uppercase tracking-widest">Soumettre</button>
+            <button type="submit" disabled={submitting} className="bg-antic-blue text-white px-10 py-3 rounded-2xl text-sm font-black shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 uppercase tracking-widest disabled:opacity-60 flex items-center gap-2">
+              {submitting && <Loader size={14} className="animate-spin" />}
+              Soumettre
+            </button>
           </div>
         </form>
       </motion.div>
@@ -1307,13 +1370,21 @@ const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose
   );
 };
 
+const ROLE_IDS: Record<string, number> = {
+  super_admin: 1,
+  admin_cirt: 2,
+  directeur_antenne: 3,
+  agent: 4,
+};
+
 const CreateUserModal: React.FC<{ 
   currentUser: User; 
   onClose: () => void; 
-  onCreate: (u: Omit<User, 'id'>) => void 
+  onCreate: (u: Omit<User, 'id'> & { password: string; roleId: number; antenneId?: number }) => void 
 }> = ({ currentUser, onClose, onCreate }) => {
   const [username, setUsername] = useState('');
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('ANTENNE_SIMPLE');
   const [antenneId, setAntenneId] = useState('');
   const [allowedCategories, setAllowedCategories] = useState<CategoryId[]>([]);
@@ -1329,16 +1400,31 @@ const CreateUserModal: React.FC<{
     availableRoles.push('ANTENNE_SIMPLE');
   }
 
+  const roleNameMap: Record<UserRole, string> = {
+    SUPER_ADMIN: 'super_admin',
+    CIRT_ADMIN: 'admin_cirt',
+    CIRT_SECONDARY: 'admin_cirt',
+    ANTENNE_DIRECTOR: 'directeur_antenne',
+    ANTENNE_SIMPLE: 'agent',
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const backendRoleName = roleNameMap[role];
+    const resolvedAntenneId = (role === 'ANTENNE_DIRECTOR' || role === 'ANTENNE_SIMPLE')
+      ? (isAntenneDirector ? (currentUser.antenneId ? Number(currentUser.antenneId) : undefined) : (antenneId ? Number(antenneId) : undefined))
+      : undefined;
+
     onCreate({
       username,
       name,
+      password,
       role,
+      roleId: ROLE_IDS[backendRoleName] ?? 4,
       affiliation: (role === 'CIRT_ADMIN' || role === 'CIRT_SECONDARY') ? 'CIRT' : 'ANTENNE',
-      antenneId: (role === 'ANTENNE_DIRECTOR' || role === 'ANTENNE_SIMPLE') ? (isAntenneDirector ? currentUser.antenneId : antenneId) : undefined,
+      antenneId: resolvedAntenneId,
       allowedCategories: role === 'CIRT_SECONDARY' ? allowedCategories : undefined,
-      createdBy: currentUser.id
+      createdBy: currentUser.id,
     });
   };
 
@@ -1360,14 +1446,26 @@ const CreateUserModal: React.FC<{
             />
           </div>
           <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Nom d'utilisateur</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Adresse e-mail (identifiant)</label>
             <input 
-              type="text" 
+              type="email" 
               required
               value={username}
               onChange={e => setUsername(e.target.value)}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
-              placeholder="ex: jdupont"
+              placeholder="ex: jean.dupont@antic.cm"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Mot de passe initial</label>
+            <input 
+              type="password"
+              required
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
+              placeholder="••••••••"
+              minLength={8}
             />
           </div>
           <div>
@@ -1393,7 +1491,7 @@ const CreateUserModal: React.FC<{
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
               >
                 <option value="">Sélectionner une antenne</option>
-                {ANTENNES.map(a => (
+                {STATIC_ANTENNES.map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
@@ -1404,7 +1502,7 @@ const CreateUserModal: React.FC<{
             <div>
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Catégories Autorisées</label>
               <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200">
-                {CATEGORIES.filter(c => c.id !== 'accueil').map(cat => (
+                {STATIC_CATEGORIES.filter(c => c.id !== 'accueil').map(cat => (
                   <label key={cat.id} className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer hover:text-antic-blue">
                     <input 
                       type="checkbox"

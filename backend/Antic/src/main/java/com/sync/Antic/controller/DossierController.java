@@ -25,8 +25,8 @@ public class DossierController {
     @Autowired
     private DossierService dossierService;
 
-    // 🔍 voir dossiers accessibles
-    @GetMapping
+    // 🔍 voir dossiers accessibles (selon rôle)
+    @GetMapping("/list")
     public List<Dossier> getDossiers() {
         return dossierService.getAccessibleDossiers();
     }
@@ -73,6 +73,7 @@ public class DossierController {
         return dossierService.getStats(categoryId);
     }
     
+    // 📄 Pagination
     @GetMapping
     public Page<Dossier> get(@PageableDefault(size = 10) Pageable pageable) {
         return dossierService.getDossiers(pageable);
