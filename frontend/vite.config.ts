@@ -5,7 +5,9 @@ import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const apiUrl = env.VITE_API_URL || 'http://localhost:8080';
+
+  // En dev, toujours proxifier vers localhost:8080 quel que soit VITE_API_URL
+  const backendTarget = 'http://localhost:8080';
 
   return {
     plugins: [react(), tailwindcss()],
@@ -16,20 +18,21 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
-      // Force .ts before .js so src/api.ts wins over any stale api.js
       extensions: ['.mts', '.ts', '.tsx', '.mjs', '.js', '.jsx', '.json'],
     },
     server: {
+      port: 3000,
+      host: '0.0.0.0',
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
-        '/auth':       { target: apiUrl, changeOrigin: true },
-        '/dossiers':   { target: apiUrl, changeOrigin: true },
-        '/users':      { target: apiUrl, changeOrigin: true },
-        '/antennes':   { target: apiUrl, changeOrigin: true },
-        '/categories': { target: apiUrl, changeOrigin: true },
-        '/etapes':     { target: apiUrl, changeOrigin: true },
-        '/documents':  { target: apiUrl, changeOrigin: true },
-        '/files':      { target: apiUrl, changeOrigin: true },
+        '/auth':       { target: backendTarget, changeOrigin: true },
+        '/dossiers':   { target: backendTarget, changeOrigin: true },
+        '/users':      { target: backendTarget, changeOrigin: true },
+        '/antennes':   { target: backendTarget, changeOrigin: true },
+        '/categories': { target: backendTarget, changeOrigin: true },
+        '/etapes':     { target: backendTarget, changeOrigin: true },
+        '/documents':  { target: backendTarget, changeOrigin: true },
+        '/files':      { target: backendTarget, changeOrigin: true },
       },
     },
   };
