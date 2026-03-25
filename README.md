@@ -6,3 +6,4 @@ This work will have two parts : The Frontend and The Backend. Each part has its 
 
 First of all, let's create a "sample" demo.
 Next, let's create a backend in Java:Spring-boot 3.5.12 using Jdk-17
+Next, let's create the Spring-boot backend using JPA on a MySQL db
