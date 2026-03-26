@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * DataInitializer — s'exécute au démarrage de l'application.
@@ -45,6 +46,7 @@ public class DataInitializer implements CommandLineRunner {
     private String adminName;
 
     @Override
+    @Transactional
     public void run(String... args) {
 
         // ── 1. Rôles ────────────────────────────────────────────────────────

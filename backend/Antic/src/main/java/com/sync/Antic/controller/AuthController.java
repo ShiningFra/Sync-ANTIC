@@ -47,4 +47,22 @@ public class AuthController {
         String token = jwtService.generateToken(user);
         return Map.of("token", token);
     }
+
+    /**
+     * Endpoint de diagnostic — à supprimer après la mise en prod.
+     * GET /auth/check?email=admin@antic.cm
+     * Retourne si le compte existe et si son rôle est assigné.
+     */
+    @GetMapping("/check")
+    public Map<String, Object> check(@RequestParam String email) {
+        return userRepository.findByEmail(email)
+                .map(u -> Map.<String, Object>of(
+                        "found",    true,
+                        "email",    u.getEmail(),
+                        "name",     u.getName() != null ? u.getName() : "null",
+                        "role",     u.getRole() != null ? u.getRole().getName() : "NULL — rôle manquant",
+                        "hasPassword", u.getPassword() != null && !u.getPassword().isBlank()
+                ))
+                .orElse(Map.of("found", false, "email", email));
+    }
 }
