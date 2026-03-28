@@ -201,7 +201,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       setAntennes(antennesData);
       // Merge backend categories with static ones (keep Accueil header)
       const backendCats = categoriesData.map(c => ({ ...c, icon: 'FileText' }));
-      const accueil = STATIC_STATIC_CATEGORIES.find(c => c.id === 'accueil');
+      const accueil = STATIC_CATEGORIES.find(c => c.id === 'accueil');
       setCategories(accueil ? [accueil, ...backendCats] : backendCats);
     } catch (err: any) {
       setApiError(err?.message ?? 'Impossible de contacter le serveur.');
@@ -666,14 +666,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <div className="w-12 h-12 bg-antic-blue text-white rounded-2xl flex items-center justify-center shadow-lg">
-                            {React.createElement(IconMap[STATIC_CATEGORIES.find(c => c.id === selectedCategoryId)?.icon || 'Home'], { size: 24 })}
+                            {React.createElement(IconMap[categories.find(c => c.id === selectedCategoryId)?.icon || 'Home'], { size: 24 })}
                           </div>
                           <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">
-                            {STATIC_CATEGORIES.find(c => c.id === selectedCategoryId)?.label}
+                            {categories.find(c => c.id === selectedCategoryId)?.label}
                           </h2>
                         </div>
                         <p className="text-slate-500 font-medium ml-1">
-                          {STATIC_CATEGORIES.find(c => c.id === selectedCategoryId)?.description}
+                          {categories.find(c => c.id === selectedCategoryId)?.description}
                         </p>
                       </div>
                     </div>
@@ -778,7 +778,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                             <div className="flex items-center gap-2">
                               <span className={`w-2 h-2 rounded-full ${u.affiliation === 'CIRT' ? 'bg-antic-blue' : 'bg-antic-gold'}`}></span>
                               <span className="text-xs font-bold text-slate-600">
-                                {u.affiliation} {u.antenneId ? `(${STATIC_ANTENNES.find(a => a.id === u.antenneId)?.name})` : ''}
+                                {u.affiliation} {u.antenneId ? `(${antennes.find(a => a.id === u.antenneId)?.name})` : ''}
                               </span>
                             </div>
                           </td>
@@ -1217,7 +1217,7 @@ const DossierDetailView: React.FC<{
                 <InfoRow label="Antenne" value={dossier.antenneName} />
                 <InfoRow label="Créé par" value={dossier.createdBy || 'Inconnu'} />
                 <InfoRow label="Date de création" value={new Date(dossier.createdAt).toLocaleDateString('fr-FR')} />
-                <InfoRow label="Catégorie" value={STATIC_CATEGORIES.find(c => c.id === dossier.categoryId)?.label || 'Inconnue'} />
+                <InfoRow label="Catégorie" value={categories.find(c => c.id === dossier.categoryId)?.label || 'Inconnue'} />
               </InfoCard>
 
               {dossier.status === 'VALIDATED' && (

@@ -19,7 +19,7 @@ public class CorsConfig {
     // Origines autorisées, configurables depuis application.properties
     // En production avec Nginx same-server, les requêtes arrivent depuis
     // localhost:8080 lui-même → on autorise aussi localhost sans port.
-    @Value("${cors.allowed-origins:http://localhost,http://localhost:80,http://localhost:5173}")
+    @Value("${cors.allowed-origins:http://localhost,http://localhost:80,http://localhost:3000,http://localhost:5173}")
     private List<String> allowedOrigins;
 
     @Bean

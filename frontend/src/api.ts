@@ -17,10 +17,8 @@
 
 import { User, UserRole, Dossier, DossierStatus, Category, Antenne } from './types';
 
-// En développement : Vite proxy intercepte /auth, /dossiers, etc. → BASE_URL vide = URLs relatives ✅
-// En production sans Nginx : mettre VITE_API_URL=http://votre-ip:8080 dans .env
-// En production avec Nginx  : laisser VITE_API_URL vide, Nginx proxifie → BASE_URL vide = URLs relatives ✅
-const BASE_URL: string = (import.meta as any).env?.VITE_API_URL ?? '';
+// URL du backend — configurée dans .env (VITE_API_URL=http://localhost:8080)
+const BASE_URL: string = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080';
 
 // ─── Token management ───────────────────────────────────────────────────────
 
