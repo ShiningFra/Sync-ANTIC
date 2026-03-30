@@ -30,19 +30,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 relative overflow-y-auto">
-      <div className="absolute inset-0 z-0">
-        <img src="https://picsum.photos/seed/cameroon/1920/1080" alt="Background"
-          className="w-full h-full object-cover opacity-20" referrerPolicy="no-referrer" />
-        <div className="absolute inset-0 bg-gradient-to-br from-antic-blue/80 via-slate-900/90 to-slate-900"></div>
-      </div>
-      <div className="absolute inset-0 z-0 opacity-10 pointer-events-none overflow-hidden">
-        <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-            <path d="M 10 0 L 0 0 0 10" fill="none" stroke="white" strokeWidth="0.1"/>
-          </pattern></defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
+      {/* Fond géométrique SVG */}
+      <div className="absolute inset-0 z-0 opacity-8 pointer-events-none">
+        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="landing-grid" width="60" height="60" patternUnits="userSpaceOnUse">
+              <path d="M 60 0 L 0 0 0 60" fill="none" stroke="white" strokeWidth="0.5"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#landing-grid)" />
         </svg>
       </div>
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 z-0 bg-gradient-to-br from-antic-blue/60 via-slate-900/90 to-slate-900"></div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md bg-white rounded-[32px] shadow-2xl shadow-black/50 border border-white/10 overflow-hidden relative z-10">

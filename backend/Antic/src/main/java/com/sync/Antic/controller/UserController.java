@@ -51,4 +51,40 @@ public class UserController {
         }
         return List.of(current);
     }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id) {
+        User current = SecurityUtils.getCurrentUserDetails().getUser();
+        String role = current.getRole().getName();
+
+        User target = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Utilisateur introuvable"));
+
+        // super_admin peut tout supprimer sauf lui-même
+        if (role.equals("super_admin")) {
+            if (target.getId().equals(current.getId())) {
+                throw new RuntimeException("Impossible de supprimer son propre compte");
+            }
+            userRepository.deleteById(id);
+            return;
+        }
+
+        // admin_cirt peut supprimer les agents
+        if (role.equals("admin_cirt") && target.getRole().getName().equals("agent")) {
+            userRepository.deleteById(id);
+            return;
+        }
+
+        // directeur_antenne peut supprimer les agents de son antenne
+        if (role.equals("directeur_antenne")
+                && target.getRole().getName().equals("agent")
+                && current.getAntenne() != null
+                && current.getAntenne().getId().equals(
+                        target.getAntenne() != null ? target.getAntenne().getId() : null)) {
+            userRepository.deleteById(id);
+            return;
+        }
+
+        throw new RuntimeException("Unauthorized");
+    }
 }

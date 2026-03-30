@@ -349,6 +349,17 @@ export async function getAntennes(): Promise<Antenne[]> {
 
 // ─── Utilisateurs ─────────────────────────────────────────────────────────────
 
+// ─── Utilisateurs ─────────────────────────────────────────────────────────────
+
+export async function getUsers(): Promise<User[]> {
+  const b = await http<BackendUser[]>('GET', '/users');
+  return b.map(toFrontendUser);
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  return http<void>('DELETE', `/users/${id}`);
+}
+
 export async function createUser(data: {
   name: string;
   email: string;

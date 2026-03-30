@@ -4,9 +4,9 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --color-antic-blue: #0056b3;
+  --color-antic-blue: #0A1B36;
   --color-antic-green: #28a745;
-  --color-antic-gold: #ffc107;
+  --color-antic-gold: #0056b3;
 }
 
 @layer base {

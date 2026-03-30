@@ -192,13 +192,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setLoading(true);
     setApiError('');
     try {
-      const [dossiersData, antennesData, categoriesData] = await Promise.all([
+      const [dossiersData, antennesData, categoriesData, usersData] = await Promise.all([
         api.getDossiers(),
         api.getAntennes(),
         api.getCategories(),
+        api.getUsers(),
       ]);
       setDossiers(dossiersData);
       setAntennes(antennesData);
+      setUsers(usersData);
       // Merge backend categories with static ones (keep Accueil header)
       const backendCats = categoriesData.map(c => ({ ...c, icon: 'FileText' }));
       const accueil = STATIC_CATEGORIES.find(c => c.id === 'accueil');
@@ -354,23 +356,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   const handleCreateUser = async (newUser: Omit<User, 'id'> & { password?: string; roleId?: number; antenneId?: number }) => {
     try {
-      const created = await api.createUser({
+      await api.createUser({
         name: newUser.name,
         email: newUser.username,
         password: (newUser as any).password ?? 'ChangeMe123!',
         roleId: (newUser as any).roleId ?? 4,
         antenneId: (newUser as any).antenneId,
       });
-      setUsers(prev => [...prev, created]);
+      // Recharger depuis l'API pour avoir les données persistées
+      const updatedUsers = await api.getUsers();
+      setUsers(updatedUsers);
       setIsUserModalOpen(false);
     } catch (err: any) {
       alert(err?.message ?? 'Erreur lors de la création de l\'utilisateur.');
     }
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
-      setUsers(prev => prev.filter(u => u.id !== id));
+      try {
+        await api.deleteUser(id);
+        const updatedUsers = await api.getUsers();
+        setUsers(updatedUsers);
+      } catch (err: any) {
+        // Si pas d'endpoint DELETE, on supprime juste localement
+        setUsers(prev => prev.filter(u => u.id !== id));
+      }
     }
   };
 
@@ -607,15 +618,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 ) : selectedCategoryId === 'accueil' ? (
                   <div className="space-y-12">
                     <div className="bg-slate-900 rounded-[40px] p-8 sm:p-16 text-white relative overflow-hidden shadow-2xl">
-                      {/* Hero Background Image */}
-                      <div className="absolute inset-0 z-0">
-                        <img 
-                          src="https://picsum.photos/seed/tech-city/1200/600" 
-                          alt="Tech Background" 
-                          className="w-full h-full object-cover opacity-20"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent"></div>
+                      {/* Fond géométrique SVG — pas d'image externe */}
+                      <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
+                        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                          <defs>
+                            <pattern id="hero-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="0.5"/>
+                            </pattern>
+                          </defs>
+                          <rect width="100%" height="100%" fill="url(#hero-grid)" />
+                          <circle cx="80%" cy="50%" r="200" fill="white" fillOpacity="0.03"/>
+                          <circle cx="90%" cy="20%" r="120" fill="white" fillOpacity="0.03"/>
+                        </svg>
                       </div>
                       <div className="absolute top-0 right-0 w-1/2 h-full bg-antic-gold/10 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/4"></div>
                       <div className="relative z-10">
