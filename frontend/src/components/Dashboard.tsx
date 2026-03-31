@@ -584,8 +584,20 @@ const DossiersView: React.FC<{
   const [selected, setSelected]     = useState<Dossier|null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm]             = useState({ title:'', description:'', categoryId:'' });
+  const [urlsText, setUrlsText]     = useState('');   // pour les scans
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
+
+  // Scans : URLs du dossier sélectionné + stats
+  const [scanUrls, setScanUrls]     = useState<api.ScanUrl[]>([]);
+  const [scanStats, setScanStats]   = useState<api.ScanStats|null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [addingUrls, setAddingUrls] = useState(false);
+  const [newUrls, setNewUrls]       = useState('');
+
+  const SCAN_CAT_NAME = 'Scans de Vulnérabilité';
+  const isScanCat = (catId: string | number) =>
+    categories.find(c => String(c.id) === String(catId))?.name === SCAN_CAT_NAME;
 
   // ⚠️ FILTRAGE : les agents ne voient que leurs catégories autorisées
   const visibleCats = getVisibleCategories(user, categories, myPermissions);
@@ -610,11 +622,40 @@ const DossiersView: React.FC<{
     catch (e: any) { alert(e.message); }
   };
 
+  // Charger les URLs quand on ouvre un dossier de scan
+  const openDossier = async (d: Dossier) => {
+    setSelected(d);
+    if (d.category?.name === SCAN_CAT_NAME) {
+      setScanLoading(true);
+      try {
+        const [urls, stats] = await Promise.all([
+          api.getScanUrls(d.id),
+          api.getScanStats(d.id),
+        ]);
+        setScanUrls(urls); setScanStats(stats);
+      } catch {} finally { setScanLoading(false); }
+    }
+  };
+
+  const handleAddUrls = async () => {
+    if (!selected || !newUrls.trim()) return;
+    try {
+      await api.addScanUrls(selected.id, newUrls);
+      const [urls, stats] = await Promise.all([api.getScanUrls(selected.id), api.getScanStats(selected.id)]);
+      setScanUrls(urls); setScanStats(stats);
+      setNewUrls(''); setAddingUrls(false);
+    } catch (e: any) { alert(e.message); }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault(); setSubmitting(true); setError('');
     try {
-      await api.createDossier({ title:form.title, description:form.description, categoryId:Number(form.categoryId) });
-      setShowCreate(false); setForm({ title:'', description:'', categoryId:'' }); onRefresh();
+      const dossier = await api.createDossier({ title:form.title, description:form.description, categoryId:Number(form.categoryId) });
+      // Si catégorie scans et URLs fournies, les soumettre immédiatement
+      if (isScanCat(form.categoryId) && urlsText.trim()) {
+        await api.addScanUrls(dossier.id, urlsText);
+      }
+      setShowCreate(false); setForm({ title:'', description:'', categoryId:'' }); setUrlsText(''); onRefresh();
     } catch(e:any) { setError(e.message); }
     finally { setSubmitting(false); }
   };
@@ -675,7 +716,7 @@ const DossiersView: React.FC<{
           const idx  = visibleCats.findIndex(c=>c.id===d.category?.id);
           const color = idx>=0 ? CAT_COLORS[idx%CAT_COLORS.length] : '#64748b';
           return (
-            <div key={d.id} onClick={()=>setSelected(d)}
+            <div key={d.id} onClick={()=>openDossier(d)}
               style={{ display:'grid', gridTemplateColumns:'1fr 160px 160px 110px 80px', padding:'11px 16px', borderBottom:i<filtered.length-1?'1px solid #f1f5f9':'none', cursor:'pointer', transition:'background 0.12s', alignItems:'center' }}
               onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#f8fafd'}
               onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
@@ -708,6 +749,23 @@ const DossiersView: React.FC<{
               </Sel>
             </Field>
             <Field label="Description"><Txa value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Contexte et détails…"/></Field>
+            {/* Champ spécial scans de vulnérabilité */}
+            {isScanCat(form.categoryId) && (
+              <Field label="URLs à analyser" hint="Une URL par ligne. Chaque URL est enregistrée individuellement selon le CDC §15.">
+                <Txa
+                  value={urlsText}
+                  onChange={e=>setUrlsText(e.target.value)}
+                  placeholder={"https://exemple.gouv.cm\nhttps://portail.antic.cm\nhttps://..."}
+                  rows={6}
+                  style={{ fontFamily:'monospace', fontSize:12 }}
+                />
+                {urlsText.trim() && (
+                  <p style={{ fontSize:11, color:'#0070cc', marginTop:4 }}>
+                    {urlsText.split('\n').filter(l=>l.trim()).length} URL(s) détectée(s)
+                  </p>
+                )}
+              </Field>
+            )}
             <div style={{ display:'flex', gap:10, paddingTop:4 }}>
               <Btn variant="ghost" onClick={()=>setShowCreate(false)}>Annuler</Btn>
               <Btn type="submit" disabled={submitting}>{submitting?'Création…':'Créer le dossier'}</Btn>
@@ -718,7 +776,7 @@ const DossiersView: React.FC<{
 
       {/* Modal détail */}
       {selected && (
-        <Modal title={selected.title} subtitle={`#${selected.id} · ${selected.category?.name??''}`} onClose={()=>setSelected(null)}>
+        <Modal title={selected.title} subtitle={`#${selected.id} · ${selected.category?.name??''}`} onClose={()=>{ setSelected(null); setScanUrls([]); setScanStats(null); }}>
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               <StatusBadge status={selected.status}/>
@@ -733,6 +791,70 @@ const DossiersView: React.FC<{
                 </div>
               ))}
             </div>
+
+            {/* ── PANEL SCANS DE VULNÉRABILITÉ ── */}
+            {selected.category?.name === SCAN_CAT_NAME && (
+              <div style={{ borderTop:'1px solid #e8f0f8', paddingTop:14, display:'flex', flexDirection:'column', gap:12 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <p style={{ fontSize:13, fontWeight:700, color:'#003366' }}>URLs à analyser</p>
+                  <Btn onClick={()=>setAddingUrls(v=>!v)} variant="secondary" style={{ fontSize:11, padding:'4px 10px' }}>
+                    {addingUrls ? 'Annuler' : '+ Ajouter des URLs'}
+                  </Btn>
+                </div>
+
+                {/* Stats rapides */}
+                {scanStats && (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+                    {[
+                      { label:'Total', val:scanStats.total, color:'#0057a8' },
+                      { label:'En attente', val:scanStats.enAttente, color:'#d97706' },
+                      { label:'Analysées', val:scanStats.analysees, color:'#059669' },
+                      { label:'Élevé', val:scanStats.vulnEleve, color:'#dc2626' },
+                    ].map(s=>(
+                      <div key={s.label} style={{ background:'#f8fafd', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
+                        <p style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.val}</p>
+                        <p style={{ fontSize:10, color:'#94a3b8', fontWeight:600 }}>{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Ajout URLs */}
+                {addingUrls && (
+                  <div style={{ background:'#f8fafd', borderRadius:8, padding:12 }}>
+                    <p style={{ fontSize:11, color:'#5a6a7e', marginBottom:6 }}>Une URL par ligne</p>
+                    <Txa value={newUrls} onChange={e=>setNewUrls(e.target.value)}
+                      placeholder={"https://exemple.gouv.cm\nhttps://portail.antic.cm"}
+                      rows={4} style={{ fontFamily:'monospace', fontSize:12, marginBottom:8 }}/>
+                    <Btn onClick={handleAddUrls} disabled={!newUrls.trim()}>Soumettre les URLs</Btn>
+                  </div>
+                )}
+
+                {/* Liste URLs */}
+                {scanLoading ? (
+                  <p style={{ fontSize:12, color:'#94a3b8' }}>Chargement…</p>
+                ) : scanUrls.length > 0 ? (
+                  <div style={{ maxHeight:200, overflowY:'auto', display:'flex', flexDirection:'column', gap:4 }}>
+                    {scanUrls.map(u=>(
+                      <div key={u.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+                        background:'#f8fafd', borderRadius:6, padding:'6px 10px' }}>
+                        <span style={{ fontSize:11, fontFamily:'monospace', color:'#003366',
+                          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'70%' }}>{u.url}</span>
+                        <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99,
+                          background: u.status==='ANALYSEE'?'#d1fae5':u.status==='ECHOUEE'?'#fee2e2':'#fef3c7',
+                          color: u.status==='ANALYSEE'?'#065f46':u.status==='ECHOUEE'?'#991b1b':'#92400e',
+                          flexShrink:0 }}>
+                          {u.status==='ANALYSEE'?'Analysée':u.status==='ECHOUEE'?'Échouée':'En attente'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize:12, color:'#94a3b8', fontStyle:'italic' }}>Aucune URL soumise pour ce dossier.</p>
+                )}
+              </div>
+            )}
+
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', paddingTop:4, borderTop:'1px solid #f1f5f9' }}>
               {canValidate(user.role) && selected.status==='EN_COURS' && <Btn onClick={()=>act(()=>api.validateDossier(selected.id))}><Check size={13}/> Valider</Btn>}
               {canArchive(user.role) && selected.status==='VALIDE' && <Btn variant="secondary" onClick={()=>act(()=>api.archiveDossier(selected.id))}><Archive size={13}/> Archiver</Btn>}
@@ -872,9 +994,17 @@ const UsersView: React.FC<{
   const creatableRoles = (CREATABLE_ROLES[user.role] ?? []) as UserRole[];
 
   // Rôles pour lesquels on peut éditer les catégories (agents)
-  const canEditCatOf = (target: User) =>
-    (user.role==='super_admin' || user.role==='admin_cirt') &&
-    ['agent_cirt','agent_antenne'].includes(target.role);
+  const canEditCatOf = (target: User) => {
+    // super_admin / admin_cirt : peuvent gérer les catégories de agent_cirt et agent_antenne
+    if ((user.role === 'super_admin' || user.role === 'admin_cirt') &&
+        ['agent_cirt', 'agent_antenne'].includes(target.role?.name)) return true;
+    // directeur_antenne : peut gérer les catégories de ses agent_antenne
+    if (user.role === 'directeur_antenne' && target.role?.name === 'agent_antenne' &&
+        user.antenne?.id === target.antenne?.id) return true;
+    /*console.log(user.role.toString());
+    console.log(target.role?.name.toString());*/
+    return false;
+  };
 
   const needsAntenne = ['directeur_antenne','agent_antenne'].includes(form.roleName);
   const needsService = ['chef_service','agent_cirt'].includes(form.roleName);

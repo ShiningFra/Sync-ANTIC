@@ -175,3 +175,42 @@ export interface UpdateProfilePayload {
 }
 export const updateProfile = (payload: UpdateProfilePayload): Promise<User> =>
   http('PUT', '/users/me', payload);
+
+// ── SCANS DE VULNÉRABILITÉ ────────────────────────────────────────────────────
+export interface ScanUrl {
+  id: number;
+  url: string;
+  status: 'EN_ATTENTE' | 'ANALYSEE' | 'ECHOUEE';
+  createdAt: string;
+  analyzedAt?: string;
+}
+
+export interface ScanResult {
+  id: number;
+  scanUrl: ScanUrl;
+  severity: 'FAIBLE' | 'MOYEN' | 'ELEVE';
+  rapport?: string;
+  scannedAt: string;
+}
+
+export interface ScanStats {
+  total: number;
+  enAttente: number;
+  analysees: number;
+  echouees: number;
+  vulnFaible: number;
+  vulnMoyen: number;
+  vulnEleve: number;
+}
+
+export const addScanUrls = (dossierId: number, urls: string): Promise<ScanUrl[]> =>
+  http('POST', `/scans/${dossierId}/urls`, { urls });
+
+export const getScanUrls = (dossierId: number): Promise<ScanUrl[]> =>
+  http('GET', `/scans/${dossierId}/urls`);
+
+export const saveScanResult = (urlId: number, severity: string, rapport: string): Promise<ScanResult> =>
+  http('POST', `/scans/urls/${urlId}/result`, { severity, rapport });
+
+export const getScanStats = (dossierId: number): Promise<ScanStats> =>
+  http('GET', `/scans/${dossierId}/stats`);
