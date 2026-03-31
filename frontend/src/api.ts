@@ -166,3 +166,12 @@ export const uploadDocument = (etapeId: number, file: File): Promise<void> => {
   fd.append('etapeId', String(etapeId));
   return http('POST', '/documents/upload', fd, true);
 };
+
+// ── PROFIL ────────────────────────────────────────────────────────────────────
+export interface UpdateProfilePayload {
+  name?: string;
+  email?: string;
+  password?: string;
+}
+export const updateProfile = (payload: UpdateProfilePayload): Promise<User> =>
+  http('PUT', '/users/me', payload);

@@ -5,44 +5,29 @@ import type { User } from './types';
 import { clearToken, getToken, getCurrentUser } from './api';
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser]     = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restituer la session depuis le token stocké
   useEffect(() => {
     const token = getToken();
     if (token) {
-      getCurrentUser()
-        .then(setUser)
-        .catch(() => { clearToken(); })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+      getCurrentUser().then(setUser).catch(()=>clearToken()).finally(()=>setLoading(false));
+    } else { setLoading(false); }
   }, []);
 
-  // Gérer le logout automatique (token expiré)
   useEffect(() => {
-    const handler = () => { setUser(null); };
+    const handler = () => setUser(null);
     window.addEventListener('app-logout', handler);
     return () => window.removeEventListener('app-logout', handler);
   }, []);
 
-  const handleLogin = (u: User) => setUser(u);
-  const handleLogout = () => { clearToken(); setUser(null); };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--night-900)' }}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
-          <span className="text-sky-300 text-sm font-medium">Chargement…</span>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#002855' }}>
+      <div style={{ width:44, height:44, border:'3px solid rgba(255,255,255,0.1)', borderTop:'3px solid #4db8ff', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+    </div>
+  );
 
   return user
-    ? <Dashboard user={user} onLogout={handleLogout} />
-    : <LandingPage onLogin={handleLogin} />;
+    ? <Dashboard user={user} onLogout={()=>{ clearToken(); setUser(null); }} onUserUpdate={setUser}/>
+    : <LandingPage onLogin={setUser}/>;
 }
