@@ -47,7 +47,7 @@ public class CategoryController {
     @GetMapping("/user/{userId}")
     public List<PermissionCategory> getUserPermissions(@PathVariable Long userId) {
         User u = SecurityUtils.getCurrentUserDetails().getUser();
-        if (!u.isSuperAdmin() && !u.isAdminCirt() && !u.getId().equals(userId)) {
+        if (!u.isSuperAdmin() && !u.isAdminCirt() && !u.isDirecteurAntenne()&& !u.getId().equals(userId)) {
             throw new RuntimeException("Accès refusé");
         }
         return permRepo.findByUserId(userId);
@@ -58,7 +58,7 @@ public class CategoryController {
     @Transactional
     public ResponseEntity<?> grantPermission(@RequestBody Map<String, Long> body) {
         User u = SecurityUtils.getCurrentUserDetails().getUser();
-        if (!u.isSuperAdmin() && !u.isAdminCirt()) {
+        if (!u.isSuperAdmin() && !u.isAdminCirt() && !u.isDirecteurAntenne()) {
             return ResponseEntity.status(403).body(Map.of("error", "Droits insuffisants"));
         }
         Long userId = body.get("userId");
@@ -84,7 +84,7 @@ public class CategoryController {
     @Transactional
     public ResponseEntity<?> revokePermission(@RequestBody Map<String, Long> body) {
         User u = SecurityUtils.getCurrentUserDetails().getUser();
-        if (!u.isSuperAdmin() && !u.isAdminCirt()) {
+        if (!u.isSuperAdmin() && !u.isAdminCirt() && !u.isDirecteurAntenne()) {
             return ResponseEntity.status(403).body(Map.of("error", "Droits insuffisants"));
         }
         permRepo.deleteByUserIdAndCategoryId(body.get("userId"), body.get("categoryId"));
