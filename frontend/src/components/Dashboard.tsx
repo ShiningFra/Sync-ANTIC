@@ -601,6 +601,8 @@ const DossiersView: React.FC<{
   const [uploading, setUploading]   = useState(false);
   const [previewDoc, setPreviewDoc] = useState<api.DocFile|null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+const [previewType, setPreviewType] = useState<string>("");
 
   const SCAN_CAT_NAME = 'Scans de Vulnérabilité';
   const isScanCat = (catId: string | number) =>
@@ -694,6 +696,40 @@ const DossiersView: React.FC<{
       setDocs(prev => prev.filter(d => d.id !== docId));
     } catch(e:any) { alert(e.message); }
   };
+
+const handleDownload = async (url, fileName) => {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        // On injecte bien le token ici
+        'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+      }
+    });
+
+    if (!response.ok) throw new Error('Échec du téléchargement');
+
+    // On transforme la réponse en objet binaire (Blob)
+    const blob = await response.blob();
+    
+    // On crée une URL temporaire pour ce Blob
+    const blobUrl = window.URL.createObjectURL(blob);
+    
+    // On crée un lien <a> invisible, on clique dessus, puis on le supprime
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.setAttribute('download', fileName); // Force le nom du fichier
+    document.body.appendChild(link);
+    link.click();
+    
+    // Nettoyage
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error("Erreur lors du téléchargement :", error);
+    alert("Erreur d'authentification ou fichier introuvable.");
+  }
+};
 
   return (
     <div style={{ padding:28, display:'flex', flexDirection:'column', gap:18 }}>
@@ -948,7 +984,7 @@ const DossiersView: React.FC<{
                         </div>
                         <div style={{ display:'flex', gap:4, flexShrink:0 }}>
                           {/* Visualiser (inline pour images et PDF) */}
-                          <a href={viewUrl} target="_blank" rel="noopener noreferrer"
+                          <a target="_blank" rel="noopener noreferrer"
                             title="Visualiser" style={{
                               display:'flex', alignItems:'center', justifyContent:'center',
                               width:28, height:28, borderRadius:6,
@@ -957,7 +993,7 @@ const DossiersView: React.FC<{
                             <Eye size={13}/>
                           </a>
                           {/* Télécharger */}
-                          <a href={viewUrl} download={doc.fileName}
+                          <a onClick={() => handleDownload(viewUrl, doc.fileName)} download={doc.fileName}
                             title="Télécharger" style={{
                               display:'flex', alignItems:'center', justifyContent:'center',
                               width:28, height:28, borderRadius:6,
@@ -1334,6 +1370,9 @@ const AntennesView: React.FC<{ user:User; antennes:Antenne[]; onRefresh:()=>void
 export const Dashboard: React.FC<{ user: User; onLogout: () => void; onUserUpdate: (u: User) => void }> = ({
   user, onLogout, onUserUpdate
 }) => {
+
+const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+const [previewType, setPreviewType] = useState<string>("");
   const [activeTab, setActiveTab]   = useState<Tab>(canViewStats(user.role)?'dashboard':'dossiers');
   const [collapsed, setCollapsed]   = useState(false);
   const [loading, setLoading]       = useState(true);
@@ -1460,6 +1499,27 @@ export const Dashboard: React.FC<{ user: User; onLogout: () => void; onUserUpdat
       {showProfile && (
         <ModalProfile user={user} onClose={()=>setShowProfile(false)} onSaved={u=>{ onUserUpdate(u); setShowProfile(false); }}/>
       )}
+      {previewUrl && (
+  <div style={{
+    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+    background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', zIndex: 9999, padding: 40
+  }} onClick={() => setPreviewUrl(null)}>
+    
+    <div style={{ 
+      position: 'relative', width: '80%', height: '80%', 
+      background: '#fff', borderRadius: 12, overflow: 'hidden' 
+    }} onClick={e => e.stopPropagation()}>
+      
+      {/* Bouton fermer */}
+      <button onClick={() => setPreviewUrl(null)} style={{
+        position: 'absolute', top: 10, right: 10, zIndex: 10,
+        border: 'none', background: '#ef4444', color: '#fff', 
+        borderRadius: '50%', width: 25, height: 25, cursor: 'pointer'
+      }}>×</button>
+    </div>
+  </div>
+)}
     </div>
   );
 };
