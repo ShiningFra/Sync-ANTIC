@@ -1,66 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence } from 'motion/react';
 import { LandingPage } from './components/LandingPage';
 import { Dashboard } from './components/Dashboard';
-import { User, View } from './types';
-import { getToken, getCurrentUser, clearToken } from './api';
+import type { User } from './types';
+import { clearToken, getToken, getCurrentUser } from './api';
 
 export default function App() {
-  const [view, setView] = useState<View>('LANDING');
   const [user, setUser] = useState<User | null>(null);
-  const [bootstrapping, setBootstrapping] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  // Restore session from localStorage token on mount
+  // Restituer la session depuis le token stocké
   useEffect(() => {
     const token = getToken();
     if (token) {
       getCurrentUser()
-        .then((u) => {
-          setUser(u);
-          setView('DASHBOARD');
-        })
-        .catch(() => {
-          clearToken();
-        })
-        .finally(() => setBootstrapping(false));
+        .then(setUser)
+        .catch(() => { clearToken(); })
+        .finally(() => setLoading(false));
     } else {
-      setBootstrapping(false);
+      setLoading(false);
     }
   }, []);
 
-  const handleLogin = (u: User) => {
-    setUser(u);
-    setView('DASHBOARD');
-  };
-
-  const handleLogout = () => {
-    clearToken();
-    setUser(null);
-    setView('LANDING');
-  };
-
+  // Gérer le logout automatique (token expiré)
   useEffect(() => {
-    const cb = () => handleLogout();
-    window.addEventListener('app-logout', cb);
-    return () => window.removeEventListener('app-logout', cb);
+    const handler = () => { setUser(null); };
+    window.addEventListener('app-logout', handler);
+    return () => window.removeEventListener('app-logout', handler);
   }, []);
 
-  if (bootstrapping) {
+  const handleLogin = (u: User) => setUser(u);
+  const handleLogout = () => { clearToken(); setUser(null); };
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-antic-gold border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--night-900)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
+          <span className="text-sky-300 text-sm font-medium">Chargement…</span>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-slate-100 selection:bg-antic-gold selection:text-slate-900">
-      <AnimatePresence mode="wait">
-        {view === 'LANDING' && <LandingPage key="landing" onLogin={handleLogin} />}
-        {view === 'DASHBOARD' && user && (
-          <Dashboard key="dashboard" user={user} onLogout={handleLogout} />
-        )}
-      </AnimatePresence>
-    </div>
-  );
+  return user
+    ? <Dashboard user={user} onLogout={handleLogout} />
+    : <LandingPage onLogin={handleLogin} />;
 }

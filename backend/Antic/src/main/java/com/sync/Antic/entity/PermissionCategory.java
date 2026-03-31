@@ -1,17 +1,14 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package com.sync.Antic.entity;
 
 import jakarta.persistence.*;
 
 /**
- *
- * @author berna
+ * Associe un utilisateur CIRT à une catégorie.
+ * Les superviseurs CIRT ne voient que les dossiers de leurs catégories assignées.
+ * Géré par les admin_cirt.
  */
 @Entity
-@Table(name = "permissions_categories",
+@Table(name = "permissions_category",
        uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "category_id"}))
 public class PermissionCategory {
 
@@ -19,33 +16,18 @@ public class PermissionCategory {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public void setUser(User user) {
-        this.user = user;
-    }
-
-    public void setCategory(Category category) {
-        this.category = category;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public User getUser() {
-        return user;
-    }
-
-    public Category getCategory() {
-        return category;
-    }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+    public Category getCategory() { return category; }
+    public void setCategory(Category category) { this.category = category; }
 }

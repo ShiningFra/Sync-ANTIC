@@ -1,7 +1,3 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package com.sync.Antic.service;
 
 import com.sync.Antic.entity.*;
@@ -11,31 +7,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-/**
- *
- * @author berna
- */
 @Service
 public class DocumentService {
 
-    @Autowired
-    private DocumentRepository documentRepository;
+    @Autowired private DocumentRepository  documentRepository;
+    @Autowired private EtapeRepository     etapeRepository;
+    @Autowired private FileStorageService  fileStorageService;
 
-    @Autowired
-    private EtapeRepository etapeRepository;
-    
-    @Autowired
-    private FileStorageService fileStorageService;
-    
     public Document upload(Long etapeId, MultipartFile file) {
-
         User user = SecurityUtils.getCurrentUserDetails().getUser();
-
         Etape etape = etapeRepository.findById(etapeId)
-                .orElseThrow();
+            .orElseThrow(() -> new RuntimeException("Étape introuvable"));
 
         if (!canAccessDossier(user, etape.getDossier())) {
-            throw new RuntimeException("Unauthorized");
+            throw new RuntimeException("Accès refusé à ce dossier");
         }
 
         String fileName = fileStorageService.saveFile(file);
@@ -43,47 +28,27 @@ public class DocumentService {
         Document doc = new Document();
         doc.setFileName(file.getOriginalFilename());
         doc.setFileType(file.getContentType());
-        doc.setFileUrl("/files/" + fileName);
+        doc.setFileUrl("/documents/files/" + fileName);
         doc.setEtape(etape);
         doc.setUploadedBy(user);
-
         return documentRepository.save(doc);
     }
 
-    public Document addDocument(Long etapeId, Document doc) {
-
-        User user = SecurityUtils.getCurrentUserDetails().getUser();
-
-        Etape etape = etapeRepository.findById(etapeId)
-                .orElseThrow();
-
-        // 🔐 Vérification accès via dossier
-        if (!canAccessDossier(user, etape.getDossier())) {
-            throw new RuntimeException("Unauthorized");
-        }
-
-        doc.setEtape(etape);
-        doc.setUploadedBy(user);
-
-        return documentRepository.save(doc);
-    }
-    
     private boolean canAccessDossier(User user, Dossier dossier) {
+        if (user.isSuperAdmin() || user.isAdminCirt()) return true;
 
-        String role = user.getRole().getName();
-
-        // CIRT → accès total
-        if (role.equals("super_admin") || role.equals("admin_cirt")) {
-            return true;
+        if (user.isChefService() || user.isAgentCirt()) {
+            if (user.getService() == null || dossier.getService() == null) return false;
+            return user.getService().getId().equals(dossier.getService().getId());
         }
 
-        // Directeur antenne → son antenne
-        if (role.equals("directeur_antenne")) {
-            return dossier.getAntenne().getId().equals(user.getAntenne().getId());
+        if (user.isDirecteurAntenne()) {
+            if (user.getAntenne() == null || dossier.getAntenne() == null) return false;
+            return user.getAntenne().getId().equals(dossier.getAntenne().getId());
         }
 
-        // Agent → seulement ses dossiers
-        if (role.equals("agent")) {
+        if (user.isAgentAntenne()) {
+            if (dossier.getCreatedBy() == null) return false;
             return dossier.getCreatedBy().getId().equals(user.getId());
         }
 

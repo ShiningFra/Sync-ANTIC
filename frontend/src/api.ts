@@ -1,53 +1,31 @@
 /**
- * api.ts — Couche d'intégration entre le frontend SYNC ANTIC et le backend Spring Boot
- *
- * Mapping des types frontend → backend :
- *   UserRole frontend       → role.name backend
- *   SUPER_ADMIN             → super_admin
- *   CIRT_ADMIN              → admin_cirt
- *   CIRT_SECONDARY          → admin_cirt  (rôle étendu — mêmes droits, catégories limitées côté front)
- *   ANTENNE_DIRECTOR        → directeur_antenne
- *   ANTENNE_SIMPLE          → agent
- *
- *   DossierStatus frontend  → Status backend
- *   PENDING                 → EN_COURS
- *   VALIDATED               → VALIDE
- *   ARCHIVED                → ARCHIVE
+ * api.ts — Couche d'accès au backend Spring Boot
+ * Les types correspondent exactement aux rôles du CDC.
  */
 
-import { User, UserRole, Dossier, DossierStatus, Category, Antenne } from './types';
+import type {
+  User, Dossier, Category, Antenne, ServiceCirt,
+  SousDirection, PermissionCategory, StatGlobale, StatAntenne
+} from './types';
 
-// URL du backend — configurée dans .env (VITE_API_URL=http://localhost:8080)
 const BASE_URL: string = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080';
 
-// ─── Token management ───────────────────────────────────────────────────────
-
+// ── Token ─────────────────────────────────────────────────────────────────────
 let _token: string | null = localStorage.getItem('jwt_token');
 
 export function setToken(t: string) {
   _token = t;
   localStorage.setItem('jwt_token', t);
 }
-
 export function clearToken() {
   _token = null;
   localStorage.removeItem('jwt_token');
 }
+export function getToken(): string | null { return _token; }
 
-export function getToken(): string | null {
-  return _token;
-}
-
-// ─── HTTP helper ─────────────────────────────────────────────────────────────
-
-async function http<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-  isFormData = false
-): Promise<T> {
+// ── HTTP helper ───────────────────────────────────────────────────────────────
+async function http<T>(method: string, path: string, body?: unknown, isFormData = false): Promise<T> {
   const headers: Record<string, string> = {};
-
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
   if (!isFormData && body !== undefined) headers['Content-Type'] = 'application/json';
 
@@ -60,325 +38,131 @@ async function http<T>(
   if (res.status === 401) {
     clearToken();
     window.dispatchEvent(new Event('app-logout'));
-    throw new Error('Session expirée, veuillez vous reconnecter.');
+    throw new Error('Session expirée — veuillez vous reconnecter.');
   }
-
   if (!res.ok) {
     let msg = `Erreur ${res.status}`;
-    try {
-      const err = await res.json();
-      msg = err.error ?? msg;
-    } catch {/* ignore */}
+    try { const err = await res.json(); msg = err.error ?? msg; } catch {}
     throw new Error(msg);
   }
-
-  // 204 No Content
   if (res.status === 204) return undefined as unknown as T;
-
   return res.json() as Promise<T>;
 }
 
-// ─── Type mappers ─────────────────────────────────────────────────────────────
-
-/** Backend role → frontend UserRole */
-function mapRole(backendRole: string): UserRole {
-  switch (backendRole) {
-    case 'super_admin':        return 'SUPER_ADMIN';
-    case 'admin_cirt':         return 'CIRT_ADMIN';
-    case 'directeur_antenne':  return 'ANTENNE_DIRECTOR';
-    case 'agent':              return 'ANTENNE_SIMPLE';
-    default:                   return 'ANTENNE_SIMPLE';
-  }
-}
-
-/** Frontend UserRole → backend role name */
-function mapRoleToBackend(role: UserRole): string {
-  switch (role) {
-    case 'SUPER_ADMIN':        return 'super_admin';
-    case 'CIRT_ADMIN':
-    case 'CIRT_SECONDARY':     return 'admin_cirt';
-    case 'ANTENNE_DIRECTOR':   return 'directeur_antenne';
-    case 'ANTENNE_SIMPLE':     return 'agent';
-  }
-}
-
-/** Backend Status → frontend DossierStatus */
-function mapStatus(backendStatus: string): DossierStatus {
-  switch (backendStatus) {
-    case 'VALIDE':   return 'VALIDATED';
-    case 'ARCHIVE':  return 'ARCHIVED';
-    default:         return 'PENDING';  // EN_COURS
-  }
-}
-
-/** Frontend DossierStatus → backend Status */
-function mapStatusToBackend(status: DossierStatus): string {
-  switch (status) {
-    case 'VALIDATED': return 'VALIDE';
-    case 'ARCHIVED':  return 'ARCHIVE';
-    default:          return 'EN_COURS';
-  }
-}
-
-// ─── Backend raw types ────────────────────────────────────────────────────────
-
-interface BackendUser {
-  id: number;
-  name: string;
-  email: string;
-  role: { id: number; name: string };
-  antenne?: { id: number; name: string };
-  createdBy?: { id: number };
-}
-
-interface BackendDossier {
-  id: number;
-  title: string;
-  description: string;
-  status: string;
-  createdAt: string;
-  validatedAt?: string;
-  category?: { id: number; name: string };
-  antenne?: { id: number; name: string };
-  // createdBy is @JsonIgnore on backend, won't appear
-}
-
-interface BackendEtape {
-  id: number;
-  title: string;
-  description: string;
-  createdAt: string;
-  createdBy?: BackendUser;
-  // documents fetched separately
-}
-
-interface BackendDocument {
-  id: number;
-  fileName: string;
-  fileType: string;
-  fileUrl: string;
-  createdAt: string;
-  uploadedBy?: BackendUser;
-}
-
-interface BackendCategory {
-  id: number;
-  name: string;
-  createdBy?: BackendUser;
-}
-
-interface BackendAntenne {
-  id: number;
-  name: string;
-}
-
-// ─── Converters ───────────────────────────────────────────────────────────────
-
-function toFrontendUser(b: BackendUser): User {
-  const role = mapRole(b.role?.name ?? '');
-  return {
-    id: String(b.id),
-    username: b.email,
-    name: b.name,
-    role,
-    affiliation: (role === 'SUPER_ADMIN' || role === 'CIRT_ADMIN' || role === 'CIRT_SECONDARY')
-      ? 'CIRT'
-      : 'ANTENNE',
-    antenneId: b.antenne ? String(b.antenne.id) : undefined,
-    createdBy: b.createdBy ? String(b.createdBy.id) : undefined,
-  };
-}
-
-function toFrontendDossier(b: BackendDossier): Dossier {
-  const date = new Date(b.createdAt);
-  return {
-    id: String(b.id),
-    title: b.title,
-    description: b.description ?? '',
-    categoryId: b.category ? String(b.category.id) : '',
-    antenneId: b.antenne ? String(b.antenne.id) : '',
-    antenneName: b.antenne?.name ?? '',
-    createdAt: b.createdAt,
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
-    day: date.getDate(),
-    status: mapStatus(b.status),
-    attachments: [],   // chargés séparément via les étapes
-    steps: [],         // chargés à la demande
-    validatedAt: b.validatedAt,
-    createdBy: '',     // @JsonIgnore côté backend
-  };
-}
-
-function toFrontendCategory(b: BackendCategory): Category {
-  return {
-    id: String(b.id),
-    label: b.name,
-    icon: 'FileText',
-  };
-}
-
-function toFrontendAntenne(b: BackendAntenne): Antenne {
-  return {
-    id: String(b.id),
-    name: b.name,
-    location: b.name.replace('Antenne ', ''),
-  };
-}
-
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-
-/**
- * Login — le backend attend { email, password }.
- * Le front utilise le champ "username" pour saisir l'email.
- */
+// ── AUTH ──────────────────────────────────────────────────────────────────────
 export async function login(email: string, password: string): Promise<User> {
-  const { token } = await http<{ token: string }>('POST', '/auth/login', { email, password });
-  setToken(token);
-  const me = await getCurrentUser();
-  return me;
+  const data = await http<{ token: string; user: User }>('POST', '/auth/login', { email, password });
+  setToken(data.token);
+  return data.user;
 }
 
-export async function getCurrentUser(): Promise<User> {
-  const b = await http<BackendUser>('GET', '/users/me');
-  return toFrontendUser(b);
+export function logout() {
+  clearToken();
 }
 
-// ─── Dossiers ────────────────────────────────────────────────────────────────
+// ── USERS ─────────────────────────────────────────────────────────────────────
+export const getUsers = (): Promise<User[]> => http('GET', '/users');
+export const getCurrentUser = (): Promise<User> => http('GET', '/users/me');
 
-export async function getDossiers(): Promise<Dossier[]> {
-  const b = await http<BackendDossier[]>('GET', '/dossiers/list');
-  return b.map(toFrontendDossier);
-}
-
-export async function getDossiersFiltered(params: {
-  antenneId?: string;
-  categoryId?: string;
-  status?: DossierStatus;
-  start?: string;
-  end?: string;
-}): Promise<Dossier[]> {
-  const q = new URLSearchParams();
-  if (params.antenneId) q.set('antenneId', params.antenneId);
-  if (params.categoryId) q.set('categoryId', params.categoryId);
-  if (params.status) q.set('status', mapStatusToBackend(params.status));
-  if (params.start) q.set('start', params.start);
-  if (params.end) q.set('end', params.end);
-
-  const b = await http<BackendDossier[]>('GET', `/dossiers/filter?${q.toString()}`);
-  return b.map(toFrontendDossier);
-}
-
-export async function createDossier(data: {
-  title: string;
-  description: string;
-  categoryId: string;
-}): Promise<Dossier> {
-  const payload = {
-    title: data.title,
-    description: data.description,
-    category: { id: Number(data.categoryId) },
-  };
-  const b = await http<BackendDossier>('POST', '/dossiers', payload);
-  return toFrontendDossier(b);
-}
-
-export async function validateDossier(id: string): Promise<Dossier> {
-  const b = await http<BackendDossier>('PUT', `/dossiers/${id}/validate`);
-  return toFrontendDossier(b);
-}
-
-export async function archiveDossier(id: string): Promise<Dossier> {
-  const b = await http<BackendDossier>('PUT', `/dossiers/${id}/archive`);
-  return toFrontendDossier(b);
-}
-
-export async function getDossierStats(categoryId?: string): Promise<Record<string, Record<string, number>>> {
-  const q = categoryId ? `?categoryId=${categoryId}` : '';
-  return http('GET', `/dossiers/stats${q}`);
-}
-
-// ─── Étapes ───────────────────────────────────────────────────────────────────
-
-export async function getEtapes(dossierId: string) {
-  return http<BackendEtape[]>('GET', `/etapes/dossier/${dossierId}`);
-}
-
-export async function createEtape(dossierId: string, data: { title: string; description: string }) {
-  return http<BackendEtape>('POST', `/etapes/${dossierId}`, data);
-}
-
-// ─── Documents (upload fichier) ───────────────────────────────────────────────
-
-export async function uploadDocument(etapeId: string, file: File): Promise<BackendDocument> {
-  const form = new FormData();
-  form.append('file', file);
-  return http<BackendDocument>('POST', `/documents/${etapeId}`, form, true);
-}
-
-// ─── Catégories ───────────────────────────────────────────────────────────────
-
-export async function getCategories(): Promise<Category[]> {
-  const b = await http<BackendCategory[]>('GET', '/categories');
-  return b.map(toFrontendCategory);
-}
-
-export async function createCategory(name: string): Promise<Category> {
-  const b = await http<BackendCategory>('POST', '/categories', { name });
-  return toFrontendCategory(b);
-}
-
-// ─── Antennes ─────────────────────────────────────────────────────────────────
-
-export async function getAntennes(): Promise<Antenne[]> {
-  // Le backend n'expose pas encore de endpoint GET /antennes public.
-  // On utilise les données statiques comme fallback jusqu'à ce qu'il soit ajouté.
-  try {
-    const b = await http<BackendAntenne[]>('GET', '/antennes');
-    return b.map(toFrontendAntenne);
-  } catch {
-    // Fallback sur les antennes statiques si l'endpoint n'existe pas
-    return [
-      { id: '1', name: 'Antenne Yaoundé',    location: 'Yaoundé' },
-      { id: '2', name: 'Antenne Douala',     location: 'Douala' },
-      { id: '3', name: 'Antenne Garoua',     location: 'Garoua' },
-      { id: '4', name: 'Antenne Bafoussam',  location: 'Bafoussam' },
-    ];
-  }
-}
-
-// ─── Utilisateurs ─────────────────────────────────────────────────────────────
-
-// ─── Utilisateurs ─────────────────────────────────────────────────────────────
-
-export async function getUsers(): Promise<User[]> {
-  const b = await http<BackendUser[]>('GET', '/users');
-  return b.map(toFrontendUser);
-}
-
-export async function deleteUser(id: string): Promise<void> {
-  return http<void>('DELETE', `/users/${id}`);
-}
-
-export async function createUser(data: {
+export interface CreateUserPayload {
   name: string;
   email: string;
   password: string;
-  roleId: number;
+  roleName: string;
   antenneId?: number;
-}): Promise<User> {
-  const payload: Record<string, unknown> = {
-    name: data.name,
-    email: data.email,
-    password: data.password,
-    role: { id: data.roleId },
-  };
-  if (data.antenneId) payload['antenne'] = { id: data.antenneId };
-
-  const b = await http<BackendUser>('POST', '/users', payload);
-  return toFrontendUser(b);
+  serviceId?: number;
 }
+export const createUser = (payload: CreateUserPayload): Promise<User> =>
+  http('POST', '/users', payload);
 
-// ─── Export helpers ───────────────────────────────────────────────────────────
+export const deleteUser = (id: number): Promise<void> =>
+  http('DELETE', `/users/${id}`);
 
-export { mapRoleToBackend, mapStatusToBackend, mapRole, mapStatus };
+// ── DOSSIERS ──────────────────────────────────────────────────────────────────
+export const getDossiers = (): Promise<Dossier[]> => http('GET', '/dossiers');
+export const getDossierById = (id: number): Promise<Dossier> => http('GET', `/dossiers/${id}`);
+
+export interface CreateDossierPayload {
+  title: string;
+  description?: string;
+  categoryId: number;
+}
+export const createDossier = (p: CreateDossierPayload): Promise<Dossier> =>
+  http('POST', '/dossiers', p);
+
+export const validateDossier = (id: number): Promise<Dossier> =>
+  http('PUT', `/dossiers/${id}/validate`);
+
+export const archiveDossier = (id: number): Promise<Dossier> =>
+  http('PUT', `/dossiers/${id}/archive`);
+
+export const deleteDossier = (id: number): Promise<void> =>
+  http('DELETE', `/dossiers/${id}`);
+
+// ── CATÉGORIES ────────────────────────────────────────────────────────────────
+export const getCategories = (): Promise<Category[]> => http('GET', '/categories');
+
+export const createCategory = (name: string): Promise<Category> =>
+  http('POST', '/categories', { name });
+
+export const deleteCategory = (id: number): Promise<void> =>
+  http('DELETE', `/categories/${id}`);
+
+export const getUserPermissions = (userId: number): Promise<PermissionCategory[]> =>
+  http('GET', `/categories/user/${userId}`);
+
+export const grantCategoryPermission = (userId: number, categoryId: number): Promise<PermissionCategory> =>
+  http('POST', '/categories/grant', { userId, categoryId });
+
+export const revokeCategoryPermission = (userId: number, categoryId: number): Promise<void> =>
+  http('DELETE', '/categories/revoke', { userId, categoryId });
+
+// ── ANTENNES ──────────────────────────────────────────────────────────────────
+export const getAntennes = (): Promise<Antenne[]> => http('GET', '/antennes');
+
+export const createAntenne = (name: string): Promise<Antenne> =>
+  http('POST', '/antennes', { name });
+
+export const deleteAntenne = (id: number): Promise<void> =>
+  http('DELETE', `/antennes/${id}`);
+
+// ── ORGANISATION CIRT ─────────────────────────────────────────────────────────
+export const getSousDirections = (): Promise<SousDirection[]> =>
+  http('GET', '/organisation/sous-directions');
+
+export const getServices = (): Promise<ServiceCirt[]> =>
+  http('GET', '/organisation/services');
+
+export const createSousDirection = (name: string): Promise<SousDirection> =>
+  http('POST', '/organisation/sous-directions', { name });
+
+export const createService = (name: string, description: string, sousDirectionId: number): Promise<ServiceCirt> =>
+  http('POST', '/organisation/services', { name, description, sousDirectionId });
+
+// ── STATISTIQUES ──────────────────────────────────────────────────────────────
+export const getGlobalStats = (annee?: string, mois?: string): Promise<StatGlobale[]> => {
+  const params = new URLSearchParams();
+  if (annee) params.set('annee', annee);
+  if (mois) params.set('mois', mois);
+  return http('GET', `/stats/global?${params}`);
+};
+
+export const getStatsByAntenne = (categoryId?: number, annee?: string, mois?: string): Promise<StatAntenne[]> => {
+  const params = new URLSearchParams();
+  if (categoryId) params.set('categoryId', String(categoryId));
+  if (annee) params.set('annee', annee);
+  if (mois) params.set('mois', mois);
+  return http('GET', `/stats/antennes?${params}`);
+};
+
+// ── ÉTAPES ────────────────────────────────────────────────────────────────────
+export const createEtape = (dossierId: number, title: string, description: string) =>
+  http('POST', '/etapes', { dossierId, title, description });
+
+// ── DOCUMENTS ─────────────────────────────────────────────────────────────────
+export const uploadDocument = (etapeId: number, file: File): Promise<void> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('etapeId', String(etapeId));
+  return http('POST', '/documents/upload', fd, true);
+};
