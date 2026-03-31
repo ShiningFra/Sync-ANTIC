@@ -809,7 +809,6 @@ const DossiersView: React.FC<{
                       { label:'Total', val:scanStats.total, color:'#0057a8' },
                       { label:'En attente', val:scanStats.enAttente, color:'#d97706' },
                       { label:'Analysées', val:scanStats.analysees, color:'#059669' },
-                      { label:'Élevé', val:scanStats.vulnEleve, color:'#dc2626' },
                     ].map(s=>(
                       <div key={s.label} style={{ background:'#f8fafd', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
                         <p style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.val}</p>
