@@ -157,7 +157,7 @@ export const getStatsByAntenne = (categoryId?: number, annee?: string, mois?: st
 
 // ── ÉTAPES ────────────────────────────────────────────────────────────────────
 export const createEtape = (dossierId: number, title: string, description: string) =>
-  http('POST', '/etapes', { dossierId, title, description });
+  http('POST', `/etapes/${dossierId}`, { title, description });
 
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────
 export const uploadDocument = (etapeId: number, file: File): Promise<void> => {
@@ -214,3 +214,42 @@ export const saveScanResult = (urlId: number, severity: string, rapport: string)
 
 export const getScanStats = (dossierId: number): Promise<ScanStats> =>
   http('GET', `/scans/${dossierId}/stats`);
+
+// ── DOCUMENTS ─────────────────────────────────────────────────────────────────
+export interface DocFile {
+  id: number;
+  fileName: string;
+  fileType?: string;
+  fileUrl: string;
+  uploadedBy?: { id: number; name: string };
+  createdAt: string;
+}
+
+/** Liste tous les documents d'un dossier */
+export const getDossierDocuments = (dossierId: number): Promise<DocFile[]> =>
+  http('GET', `/documents/dossier/${dossierId}`);
+
+/** Upload un fichier — nécessite un etapeId.
+ *  On utilisera une étape "documents généraux" auto-créée si besoin. */
+export const uploadToEtape = (etapeId: number, file: File): Promise<DocFile> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return http('POST', `/documents/${etapeId}`, fd, true);
+};
+
+/** Supprime un document */
+export const deleteDocument = (id: number): Promise<void> =>
+  http('DELETE', `/documents/${id}`);
+
+/** URL de visualisation directe */
+export const fileViewUrl = (fileUrl: string): string =>
+  `${(import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080'}${fileUrl}`;
+
+/** Crée une étape "Pièces jointes" dédiée aux documents généraux du dossier.
+ *  Utilisée quand on upload directement depuis la modal dossier. */
+export const createEtapeForDoc = async (dossierId: number): Promise<{ id: number }> => {
+  return http('POST', `/etapes/${dossierId}`, {
+    title: 'Pièces jointes',
+    description: 'Documents généraux du dossier'
+  });
+};

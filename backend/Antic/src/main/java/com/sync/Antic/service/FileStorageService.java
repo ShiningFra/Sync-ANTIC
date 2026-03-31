@@ -56,4 +56,11 @@ public class FileStorageService {
             throw new RuntimeException("Upload failed");
         }
     }
+
+    public void deleteFile(String fileName) {
+        try {
+            Path path = Paths.get(uploadDir).toAbsolutePath().resolve(fileName);
+            Files.deleteIfExists(path);
+        } catch (IOException ignored) {}
+    }
 }

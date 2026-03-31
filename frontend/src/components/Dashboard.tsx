@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Shield, FileText, Clock, CheckCircle, Archive, Plus, LogOut,
   Search, Users, BarChart3, X, Menu, Loader2, AlertCircle,
   ShieldAlert, UserX, Database, Fingerprint, Check, Trash2,
   Building2, UserPlus, Key, RefreshCw, MapPin, Activity,
   TrendingUp, Edit2, Save, Eye, EyeOff, ChevronRight,
-  Tag, UserCheck, Settings,
+  Tag, UserCheck, Settings, Upload, Download, File, ExternalLink,
 } from 'lucide-react';
 import type {
   User, Dossier, Category, Antenne, ServiceCirt,
@@ -584,22 +584,29 @@ const DossiersView: React.FC<{
   const [selected, setSelected]     = useState<Dossier|null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm]             = useState({ title:'', description:'', categoryId:'' });
-  const [urlsText, setUrlsText]     = useState('');   // pour les scans
+  const [urlsText, setUrlsText]     = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
 
-  // Scans : URLs du dossier sélectionné + stats
+  // Scans
   const [scanUrls, setScanUrls]     = useState<api.ScanUrl[]>([]);
   const [scanStats, setScanStats]   = useState<api.ScanStats|null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [addingUrls, setAddingUrls] = useState(false);
   const [newUrls, setNewUrls]       = useState('');
 
+  // Documents
+  const [docs, setDocs]             = useState<api.DocFile[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [uploading, setUploading]   = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<api.DocFile|null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const SCAN_CAT_NAME = 'Scans de Vulnérabilité';
   const isScanCat = (catId: string | number) =>
     categories.find(c => String(c.id) === String(catId))?.name === SCAN_CAT_NAME;
 
-  // ⚠️ FILTRAGE : les agents ne voient que leurs catégories autorisées
+  // ⚠️ FILTRAGE
   const visibleCats = getVisibleCategories(user, categories, myPermissions);
   const allowedCatIds = new Set(visibleCats.map(c => c.id));
 
@@ -618,13 +625,20 @@ const DossiersView: React.FC<{
   };
 
   const act = async (fn: () => Promise<any>) => {
-    try { await fn(); onRefresh(); setSelected(null); }
+    try { await fn(); onRefresh(); setSelected(null); setDocs([]); }
     catch (e: any) { alert(e.message); }
   };
 
-  // Charger les URLs quand on ouvre un dossier de scan
+  const loadDocs = async (dossierId: number) => {
+    setDocsLoading(true);
+    try { setDocs(await api.getDossierDocuments(dossierId)); }
+    catch {} finally { setDocsLoading(false); }
+  };
+
   const openDossier = async (d: Dossier) => {
     setSelected(d);
+    setDocs([]);
+    loadDocs(d.id);
     if (d.category?.name === SCAN_CAT_NAME) {
       setScanLoading(true);
       try {
@@ -651,13 +665,34 @@ const DossiersView: React.FC<{
     e.preventDefault(); setSubmitting(true); setError('');
     try {
       const dossier = await api.createDossier({ title:form.title, description:form.description, categoryId:Number(form.categoryId) });
-      // Si catégorie scans et URLs fournies, les soumettre immédiatement
       if (isScanCat(form.categoryId) && urlsText.trim()) {
         await api.addScanUrls(dossier.id, urlsText);
       }
       setShowCreate(false); setForm({ title:'', description:'', categoryId:'' }); setUrlsText(''); onRefresh();
     } catch(e:any) { setError(e.message); }
     finally { setSubmitting(false); }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selected || !e.target.files?.length) return;
+    const file = e.target.files[0];
+    setUploading(true);
+    try {
+      // Créer une étape "Documents généraux" si le dossier n'en a pas
+      // On utilise l'endpoint etapes pour créer une étape dédiée aux pièces jointes
+      const etape = await api.createEtapeForDoc(selected.id);
+      await api.uploadToEtape(etape.id, file);
+      await loadDocs(selected.id);
+    } catch(e:any) { alert(e.message); }
+    finally { setUploading(false); if(fileInputRef.current) fileInputRef.current.value = ''; }
+  };
+
+  const handleDeleteDoc = async (docId: number) => {
+    if (!confirm('Supprimer ce document ?')) return;
+    try {
+      await api.deleteDocument(docId);
+      setDocs(prev => prev.filter(d => d.id !== docId));
+    } catch(e:any) { alert(e.message); }
   };
 
   return (
@@ -776,7 +811,7 @@ const DossiersView: React.FC<{
 
       {/* Modal détail */}
       {selected && (
-        <Modal title={selected.title} subtitle={`#${selected.id} · ${selected.category?.name??''}`} onClose={()=>{ setSelected(null); setScanUrls([]); setScanStats(null); }}>
+        <Modal title={selected.title} subtitle={`#${selected.id} · ${selected.category?.name??''}`} onClose={()=>{ setSelected(null); setScanUrls([]); setScanStats(null); setDocs([]); setPreviewDoc(null); }}>
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               <StatusBadge status={selected.status}/>
@@ -853,6 +888,101 @@ const DossiersView: React.FC<{
                 )}
               </div>
             )}
+
+            {/* ── SECTION DOCUMENTS ── */}
+            <div style={{ borderTop:'1px solid #e8f0f8', paddingTop:14, display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <p style={{ fontSize:13, fontWeight:700, color:'#003366', display:'flex', alignItems:'center', gap:6 }}>
+                  <File size={15} style={{ color:'#0057a8' }}/> Documents ({docs.length})
+                </p>
+                <label style={{
+                  display:'flex', alignItems:'center', gap:6, cursor: uploading ? 'not-allowed' : 'pointer',
+                  background:'#eff6ff', border:'none', borderRadius:6, padding:'5px 10px',
+                  fontSize:11, fontWeight:700, color:'#0057a8', opacity: uploading ? 0.6 : 1
+                }}>
+                  {uploading ? <Loader2 size={12} style={{ animation:'spin 0.8s linear infinite' }}/> : <Upload size={12}/>}
+                  {uploading ? 'Envoi…' : 'Ajouter'}
+                  <input ref={fileInputRef} type="file" style={{ display:'none' }}
+                    onChange={handleUpload} disabled={uploading}
+                    accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx,.xls,.csv,.txt,.zip"/>
+                </label>
+              </div>
+
+              {docsLoading ? (
+                <div style={{ display:'flex', alignItems:'center', gap:6, color:'#94a3b8', fontSize:12 }}>
+                  <Loader2 size={14} style={{ animation:'spin 0.8s linear infinite' }}/> Chargement…
+                </div>
+              ) : docs.length === 0 ? (
+                <p style={{ fontSize:12, color:'#94a3b8', fontStyle:'italic', textAlign:'center', padding:'10px 0' }}>
+                  Aucun document joint. Cliquez sur "Ajouter" pour téléverser un fichier.
+                </p>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:220, overflowY:'auto' }}>
+                  {docs.map(doc => {
+                    const isImage = doc.fileType?.startsWith('image/');
+                    const isPdf = doc.fileType === 'application/pdf';
+                    const viewUrl = api.fileViewUrl(doc.fileUrl);
+                    return (
+                      <div key={doc.id} style={{
+                        display:'flex', alignItems:'center', justifyContent:'space-between',
+                        background:'#f8fafd', borderRadius:8, padding:'8px 12px',
+                        border:'1px solid #e8f0f8'
+                      }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+                          <div style={{
+                            width:34, height:34, borderRadius:6, flexShrink:0,
+                            background: isPdf ? '#fee2e2' : isImage ? '#dbeafe' : '#f1f5f9',
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            color: isPdf ? '#dc2626' : isImage ? '#2563eb' : '#64748b'
+                          }}>
+                            <File size={16}/>
+                          </div>
+                          <div style={{ minWidth:0 }}>
+                            <p style={{ fontSize:12, fontWeight:600, color:'#0d1b2a',
+                              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                              maxWidth:200 }}>{doc.fileName}</p>
+                            <p style={{ fontSize:10, color:'#94a3b8', marginTop:1 }}>
+                              {doc.uploadedBy?.name ?? '—'} · {new Date(doc.createdAt).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                        </div>
+                        <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+                          {/* Visualiser (inline pour images et PDF) */}
+                          <a href={viewUrl} target="_blank" rel="noopener noreferrer"
+                            title="Visualiser" style={{
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              width:28, height:28, borderRadius:6,
+                              background:'#eff6ff', color:'#0057a8', textDecoration:'none'
+                            }}>
+                            <Eye size={13}/>
+                          </a>
+                          {/* Télécharger */}
+                          <a href={viewUrl} download={doc.fileName}
+                            title="Télécharger" style={{
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              width:28, height:28, borderRadius:6,
+                              background:'#f0fdf4', color:'#059669', textDecoration:'none'
+                            }}>
+                            <Download size={13}/>
+                          </a>
+                          {/* Supprimer */}
+                          <button onClick={() => handleDeleteDoc(doc.id)}
+                            title="Supprimer" style={{
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              width:28, height:28, borderRadius:6, border:'none', cursor:'pointer',
+                              background:'none', color:'#fca5a5'
+                            }}
+                            onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='#dc2626'}
+                            onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='#fca5a5'}>
+                            <Trash2 size={13}/>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', paddingTop:4, borderTop:'1px solid #f1f5f9' }}>
               {canValidate(user.role) && selected.status==='EN_COURS' && <Btn onClick={()=>act(()=>api.validateDossier(selected.id))}><Check size={13}/> Valider</Btn>}
