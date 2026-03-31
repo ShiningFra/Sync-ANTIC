@@ -1,81 +1,69 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package com.sync.Antic.controller;
 
-import com.sync.Antic.entity.*;
+import com.sync.Antic.entity.Dossier;
 import com.sync.Antic.service.DossierService;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
+import com.sync.Antic.service.DossierService.DossierCreateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.*;
-import org.springframework.data.web.PageableDefault;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-/**
- *
- * @author berna
- */
+import java.util.List;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/dossiers")
 public class DossierController {
 
-    @Autowired
-    private DossierService dossierService;
+    @Autowired private DossierService dossierService;
 
-    // 🔍 voir dossiers accessibles (selon rôle)
-    @GetMapping("/list")
-    public List<Dossier> getDossiers() {
-        return dossierService.getAccessibleDossiers();
-    }
-
-    // ➕ créer
-    @PostMapping
-    public Dossier create(@RequestBody Dossier dossier) {
-        return dossierService.createDossier(dossier);
-    }
-
-    // ✅ valider
-    @PutMapping("/{id}/validate")
-    public Dossier validate(@PathVariable Long id) {
-        return dossierService.validateDossier(id);
-    }
-
-    // 📦 archiver
-    @PutMapping("/{id}/archive")
-    public Dossier archive(@PathVariable Long id) {
-        return dossierService.archiveDossier(id);
-    }
-    
-    @GetMapping("/filter")
-    public List<Dossier> filter(
-            @RequestParam(required = false) Long antenneId,
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) Status status,
-            @RequestParam(required = false) String start,
-            @RequestParam(required = false) String end
-    ){
-        return dossierService.filterDossiers(
-                antenneId,
-                categoryId,
-                status,
-                start != null ? LocalDateTime.parse(start) : null,
-                end != null ? LocalDateTime.parse(end) : null
-        );
-    }
-    
-    @GetMapping("/stats")
-    public Map<Long, Map<Status, Long>> stats(
-            @RequestParam(required = false) Long categoryId) {
-
-        return dossierService.getStats(categoryId);
-    }
-    
-    // 📄 Pagination
     @GetMapping
-    public Page<Dossier> get(@PageableDefault(size = 10) Pageable pageable) {
-        return dossierService.getDossiers(pageable);
+    public List<Dossier> list() {
+        return dossierService.getDossiers();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getById(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(dossierService.getDossierById(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping
+    public ResponseEntity<?> create(@RequestBody DossierCreateRequest req) {
+        try {
+            return ResponseEntity.ok(dossierService.createDossier(req));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{id}/validate")
+    public ResponseEntity<?> validate(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(dossierService.validateDossier(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{id}/archive")
+    public ResponseEntity<?> archive(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(dossierService.archiveDossier(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> delete(@PathVariable Long id) {
+        try {
+            dossierService.deleteDossier(id);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 }

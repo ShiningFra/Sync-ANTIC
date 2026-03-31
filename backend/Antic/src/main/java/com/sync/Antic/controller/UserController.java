@@ -1,90 +1,88 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package com.sync.Antic.controller;
 
 import com.sync.Antic.entity.User;
-import com.sync.Antic.entity.UserSafeDTO;
 import com.sync.Antic.repository.UserRepository;
 import com.sync.Antic.security.SecurityUtils;
 import com.sync.Antic.service.UserService;
-import java.util.List;
-import java.util.stream.Collectors;
+import com.sync.Antic.service.UserService.UserCreateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-/**
- *
- * @author berna
- */
+import java.util.List;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/users")
 public class UserController {
 
-    @Autowired
-    private UserService userService;
+    @Autowired private UserService      userService;
+    @Autowired private UserRepository   userRepo;
+    @Autowired private PasswordEncoder  passwordEncoder;
 
-    @Autowired
-    private UserRepository userRepository;
-
-    @PostMapping
-    public User createUser(@RequestBody User user) {
-        return userService.createUser(user);
-    }
-
+    /** Utilisateur connecté */
     @GetMapping("/me")
     public User getCurrentUser() {
         return SecurityUtils.getCurrentUserDetails().getUser();
     }
 
-    @GetMapping
-    public List<User> getAll() {
+    /** Mettre à jour son propre profil (nom, email, password) */
+    @PutMapping("/me")
+    public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> body) {
         User current = SecurityUtils.getCurrentUserDetails().getUser();
-        String role = current.getRole().getName();
 
-        if (role.equals("super_admin") || role.equals("admin_cirt")) {
-            return userRepository.findAll();
+        // Email : vérifier unicité si changé
+        String newEmail = body.get("email");
+        if (newEmail != null && !newEmail.isBlank() && !newEmail.equals(current.getEmail())) {
+            if (userRepo.existsByEmail(newEmail)) {
+                return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Cet email est déjà utilisé par un autre compte"));
+            }
+            current.setEmail(newEmail);
         }
-        if (role.equals("directeur_antenne") && current.getAntenne() != null) {
-            return userRepository.findByAntenneId(current.getAntenne().getId());
+
+        String newName = body.get("name");
+        if (newName != null && !newName.isBlank()) {
+            current.setName(newName);
         }
-        return List.of(current);
+
+        String newPassword = body.get("password");
+        if (newPassword != null && !newPassword.isBlank()) {
+            if (newPassword.length() < 6) {
+                return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Le mot de passe doit contenir au moins 6 caractères"));
+            }
+            current.setPassword(passwordEncoder.encode(newPassword));
+        }
+
+        return ResponseEntity.ok(userRepo.save(current));
     }
 
+    /** Liste des utilisateurs (filtrée selon le rôle) */
+    @GetMapping
+    public List<User> listUsers() {
+        return userService.listUsers();
+    }
+
+    /** Créer un utilisateur */
+    @PostMapping
+    public ResponseEntity<?> createUser(@RequestBody UserCreateRequest req) {
+        try {
+            return ResponseEntity.ok(userService.createUser(req));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** Supprimer un utilisateur */
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
-        User current = SecurityUtils.getCurrentUserDetails().getUser();
-        String role = current.getRole().getName();
-
-        User target = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Utilisateur introuvable"));
-
-        // super_admin peut tout supprimer sauf lui-même
-        if (role.equals("super_admin")) {
-            if (target.getId().equals(current.getId())) {
-                throw new RuntimeException("Impossible de supprimer son propre compte");
-            }
-            userRepository.deleteById(id);
-            return;
+    public ResponseEntity<?> deleteUser(@PathVariable Long id) {
+        try {
+            userService.deleteUser(id);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
-
-        // admin_cirt peut supprimer les agents
-        if (role.equals("admin_cirt") && target.getRole().getName().equals("agent")) {
-            userRepository.deleteById(id);
-            return;
-        }
-
-        // directeur_antenne peut supprimer les agents de son antenne
-        if (role.equals("directeur_antenne")
-                && target.getRole().getName().equals("agent")
-                && current.getAntenne() != null
-                && current.getAntenne().getId().equals(
-                        target.getAntenne() != null ? target.getAntenne().getId() : null)) {
-            userRepository.deleteById(id);
-            return;
-        }
-
-        throw new RuntimeException("Unauthorized");
     }
 }

@@ -1,49 +1,48 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Interface.java to edit this template
- */
 package com.sync.Antic.repository;
 
-/**
- *
- * @author berna
- */
-import com.sync.Antic.entity.*;
-import org.springframework.data.jpa.repository.*;
-
-import java.util.List;
-import org.springframework.data.domain.*;
-import org.springframework.data.jpa.domain.Specification;
+import com.sync.Antic.entity.Dossier;
+import com.sync.Antic.entity.Status;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import java.util.List;
 
-public interface DossierRepository extends JpaRepository<Dossier, Long>,
-        JpaSpecificationExecutor<Dossier> {
+public interface DossierRepository extends JpaRepository<Dossier, Long> {
 
-    // Tous les dossiers d'une antenne
     List<Dossier> findByAntenneId(Long antenneId);
 
-    // Dossiers créés par un utilisateur
     List<Dossier> findByCreatedById(Long userId);
 
-    // Filtrage par catégorie
+    List<Dossier> findByServiceId(Long serviceId);
+
+    List<Dossier> findByServiceIdAndCategoryIdIn(Long serviceId, List<Long> categoryIds);
+
     List<Dossier> findByCategoryId(Long categoryId);
 
-    // Filtrage par status
     List<Dossier> findByStatus(Status status);
 
-    // Combo (ex: antenne + status)
     List<Dossier> findByAntenneIdAndStatus(Long antenneId, Status status);
-    
-    @Query("""
-    SELECT d.antenne.id as antenneId,
-        d.status as status,
-        COUNT(d) as count
-    FROM Dossier d
-    WHERE (:categoryId IS NULL OR d.category.id = :categoryId)
-    GROUP BY d.antenne.id, d.status
-    """)
-    List<StatsProjection> getStatsByCategory(@Param("categoryId") Long categoryId);
-    
-    @Override
-    Page<Dossier> findAll(Specification<Dossier> spec, Pageable pageable);
+
+    List<Dossier> findByAntenneIdAndCategoryId(Long antenneId, Long categoryId);
+
+    @Query("SELECT d FROM Dossier d WHERE d.antenne.id = :antenneId AND d.category.id = :catId AND d.status = :status")
+    List<Dossier> findByAntenneAndCategoryAndStatus(
+        @Param("antenneId") Long antenneId,
+        @Param("catId") Long catId,
+        @Param("status") Status status
+    );
+
+    @Query("SELECT d FROM Dossier d WHERE YEAR(d.createdAt) = :year")
+    List<Dossier> findByYear(@Param("year") int year);
+
+    @Query("SELECT d FROM Dossier d WHERE YEAR(d.createdAt) = :year AND MONTH(d.createdAt) = :month")
+    List<Dossier> findByYearAndMonth(@Param("year") int year, @Param("month") int month);
+
+    long countByAntenneIdAndCategoryId(Long antenneId, Long categoryId);
+
+    long countByAntenneIdAndCategoryIdAndStatus(Long antenneId, Long categoryId, Status status);
+
+    long countByCategoryId(Long categoryId);
+
+    long countByCategoryIdAndStatus(Long categoryId, Status status);
 }

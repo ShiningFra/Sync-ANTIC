@@ -1,1623 +1,1335 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { 
-  Shield, 
-  FileText, 
-  CheckCircle, 
-  Clock, 
-  Plus, 
-  LogOut, 
-  Search,
-  Download,
-  Eye,
-  Check,
-  X,
-  ShieldAlert,
-  UserX,
-  Database,
-  Users,
-  Fingerprint,
-  Upload,
-  File,
-  Home,
-  Settings,
-  Key,
-  Archive,
-  Filter,
-  Calendar,
-  MapPin,
-  ChevronDown,
-  UserPlus,
-  Trash2,
-  Lock,
-  Menu,
-  Paperclip,
-  Loader,
-  AlertCircle,
-  RefreshCw
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Shield, FileText, Clock, CheckCircle, Archive, Plus, LogOut,
+  Search, Users, BarChart3, X, Menu, Loader2, AlertCircle,
+  ShieldAlert, UserX, Database, Fingerprint, Check, Trash2,
+  Building2, UserPlus, Key, RefreshCw, MapPin, Activity,
+  TrendingUp, Edit2, Save, Eye, EyeOff, ChevronRight,
+  Tag, UserCheck, Settings,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { CATEGORIES as STATIC_CATEGORIES, ANTENNES as STATIC_ANTENNES } from '../constants';
-import { CategoryId, Dossier, User, UserRole, Antenne, DossierStatus, Category, StepActor } from '../types';
+import type {
+  User, Dossier, Category, Antenne, ServiceCirt,
+  DossierStatus, StatGlobale, StatAntenne, UserRole, PermissionCategory,
+} from '../types';
+import {
+  ROLE_LABELS, canCreateUsers, canCreateDossiers,
+  canValidate, canArchive, canViewStats, canManageAntennes, CREATABLE_ROLES,
+} from '../types';
 import * as api from '../api';
 
-const IconMap: Record<string, React.ElementType> = {
-  Home,
-  ShieldAlert,
-  UserX,
-  Search,
-  Database,
-  Users,
-  FileText,
-  Fingerprint,
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTES
+// ─────────────────────────────────────────────────────────────────────────────
+const STATUS_CFG: Record<DossierStatus, { label: string; bg: string; text: string; dot: string; border: string }> = {
+  EN_COURS: { label: 'En cours', bg: '#fff7ed', text: '#9a3412', dot: '#f97316', border: '#fed7aa' },
+  VALIDE:   { label: 'Validé',   bg: '#f0fdf4', text: '#14532d', dot: '#22c55e', border: '#bbf7d0' },
+  ARCHIVE:  { label: 'Archivé',  bg: '#eff6ff', text: '#1e3a8a', dot: '#3b82f6', border: '#bfdbfe' },
 };
 
-interface DashboardProps {
-  user: User;
-  onLogout: () => void;
+const CAT_ICONS: Record<string, React.ElementType> = {
+  'Scans de Vulnérabilité':  ShieldAlert,
+  'Fermeture de Comptes':    UserX,
+  'Veille Informationnelle': Search,
+  "Collecte d'Actifs":       Database,
+  'Base Points Focaux':      Users,
+  'Réquisitions':            FileText,
+  'Preuves Numériques':      Fingerprint,
+};
+const CAT_COLORS = ['#0057a8','#0070cc','#1b8a4e','#7c3aed','#db2777','#d97706','#0891b2'];
+
+type Tab = 'dashboard' | 'dossiers' | 'stats' | 'users' | 'antennes' | 'organisation' | 'categories';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS : calcul des catégories visibles pour un utilisateur
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Retourne les catégories auxquelles un utilisateur a accès.
+ * - super_admin / admin_cirt : toutes
+ * - chef_service / directeur_antenne : toutes (supervision)
+ * - agent_cirt / agent_antenne : seulement celles assignées via PermissionCategory
+ */
+function getVisibleCategories(
+  user: User,
+  allCategories: Category[],
+  myPermissions: PermissionCategory[]
+): Category[] {
+  if (['super_admin', 'admin_cirt', 'chef_service', 'directeur_antenne'].includes(user.role)) {
+    return allCategories;
+  }
+  // agent_cirt ou agent_antenne : filtré par permissions
+  const allowed = new Set(myPermissions.map(p => p.category.id));
+  return allCategories.filter(c => allowed.has(c.id));
 }
 
-type Tab = 'dossiers' | 'archives' | 'users' | 'antennes' | 'categories';
-
-const RecapView: React.FC<{
-  dossiers: Dossier[];
-  antennes: Antenne[];
-  selectedCategoryId: CategoryId;
-  filterYear: string;
-  filterMonth: string;
-}> = ({ dossiers, antennes, selectedCategoryId, filterYear, filterMonth }) => {
-  const stats = useMemo(() => {
-    return antennes.map(antenne => {
-      const antenneDossiers = dossiers.filter(d => 
-        d.antenneId === antenne.id && 
-        d.categoryId === selectedCategoryId &&
-        (filterYear === 'all' || d.year === parseInt(filterYear)) &&
-        (filterMonth === 'all' || d.month === parseInt(filterMonth))
-      );
-
-      return {
-        antenne,
-        total: antenneDossiers.length,
-        pending: antenneDossiers.filter(d => d.status === 'PENDING').length,
-        validated: antenneDossiers.filter(d => d.status === 'VALIDATED').length,
-        archived: antenneDossiers.filter(d => d.status === 'ARCHIVED').length,
-      };
-    });
-  }, [antennes, dossiers, selectedCategoryId, filterYear, filterMonth]);
-
-  return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-white/80 backdrop-blur-md p-8 rounded-[40px] border border-slate-200 shadow-xl mb-8">
-        <div className="flex items-center gap-4 mb-2">
-          <div className="w-12 h-12 bg-antic-blue text-white rounded-2xl flex items-center justify-center shadow-lg">
-            <Database size={24} />
-          </div>
-          <div>
-            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Récapitulatif par Antenne</h2>
-            <p className="text-sm text-slate-500 font-medium">Statistiques détaillées des traitements pour la catégorie sélectionnée</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 pb-12">
-        {stats.map(({ antenne, total, pending, validated, archived }) => (
-          <motion.div 
-            key={antenne.id} 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white p-8 rounded-[40px] border-2 border-slate-100 hover:border-antic-blue shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-antic-blue/5 rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-antic-blue/10 transition-all"></div>
-            
-            <div className="flex items-center gap-4 mb-8 relative z-10">
-              <div className="w-14 h-14 bg-slate-50 text-antic-blue rounded-2xl flex items-center justify-center group-hover:bg-antic-blue group-hover:text-white transition-all duration-300 shadow-inner">
-                <MapPin size={28} />
-              </div>
-              <div>
-                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none mb-1">{antenne.name}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{antenne.location}</p>
-              </div>
-            </div>
-            
-            <div className="space-y-4 relative z-10">
-              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group-hover:bg-white transition-all">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Dossiers</span>
-                <span className="text-lg font-black text-slate-900">{total}</span>
-              </div>
-              
-              <div className="grid grid-cols-1 gap-2">
-                <div className="flex items-center justify-between p-3 bg-orange-50/50 rounded-xl border border-orange-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div>
-                    <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">En cours</span>
-                  </div>
-                  <span className="text-sm font-black text-orange-700">{pending}</span>
-                </div>
-                
-                <div className="flex items-center justify-between p-3 bg-green-50/50 rounded-xl border border-green-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                    <span className="text-[10px] font-bold text-green-600 uppercase tracking-widest">Validés</span>
-                  </div>
-                  <span className="text-sm font-black text-green-700">{validated}</span>
-                </div>
-                
-                <div className="flex items-center justify-between p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Archivés</span>
-                  </div>
-                  <span className="text-sm font-black text-blue-700">{archived}</span>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('dossiers');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<CategoryId>('accueil');
-  const [dossiers, setDossiers] = useState<Dossier[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [antennes, setAntennes] = useState<Antenne[]>(STATIC_ANTENNES);
-  const [categories, setCategories] = useState<Category[]>(STATIC_CATEGORIES);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [apiError, setApiError] = useState('');
-
-  // Filters
-  const [filterAntenne, setFilterAntenne] = useState<string>('all');
-  const [filterYear, setFilterYear] = useState<string>('all');
-  const [filterMonth, setFilterMonth] = useState<string>('all');
-  const [filterDay, setFilterDay] = useState<string>('all');
-
-  const [selectedDossier, setSelectedDossier] = useState<Dossier | null>(null);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [isAntenneModalOpen, setIsAntenneModalOpen] = useState(false);
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<DossierStatus | 'ALL'>('ALL');
-  const [showRecap, setShowRecap] = useState(false);
-  const [isAddingStep, setIsAddingStep] = useState(false);
-  const [newStepLabel, setNewStepLabel] = useState('');
-  const [newStepDescription, setNewStepDescription] = useState('');
-  const [newStepActor, setNewStepActor] = useState<StepActor>('REALIZATION');
-
-  // ─── Load initial data from API ─────────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setApiError('');
-    try {
-      const [dossiersData, antennesData, categoriesData, usersData] = await Promise.all([
-        api.getDossiers(),
-        api.getAntennes(),
-        api.getCategories(),
-        api.getUsers(),
-      ]);
-      setDossiers(dossiersData);
-      setAntennes(antennesData);
-      setUsers(usersData);
-      // Merge backend categories with static ones (keep Accueil header)
-      const backendCats = categoriesData.map(c => ({ ...c, icon: 'FileText' }));
-      const accueil = STATIC_CATEGORIES.find(c => c.id === 'accueil');
-      setCategories(accueil ? [accueil, ...backendCats] : backendCats);
-    } catch (err: any) {
-      setApiError(err?.message ?? 'Impossible de contacter le serveur.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // Permission Helpers
-  const isSuperAdmin = user.role === 'SUPER_ADMIN';
-  const isCirtAdmin = user.role === 'CIRT_ADMIN';
-  const isCirtSecondary = user.role === 'CIRT_SECONDARY';
-  const isCirtAffiliated = user.affiliation === 'CIRT';
-  const isAntenneDirector = user.role === 'ANTENNE_DIRECTOR';
-  const isAntenneSimple = user.role === 'ANTENNE_SIMPLE';
-  const isAntenneAffiliated = user.affiliation === 'ANTENNE';
-
-  const canManageUsers = isSuperAdmin || isCirtAdmin || isAntenneDirector;
-  const canManageAntennes = isSuperAdmin;
-  const canManageCategories = isSuperAdmin || isCirtAdmin;
-  const canArchive = isSuperAdmin || isCirtAdmin || isAntenneDirector;
-  const canValidate = isSuperAdmin || isCirtAdmin;
-  const canCreateDossier = isAntenneAffiliated || isCirtAffiliated;
-
-  const baseDossiersForStats = useMemo(() => {
-    let base = dossiers;
-    if (isAntenneSimple) {
-      base = base.filter(d => d.createdBy === user.id);
-    } else if (isAntenneDirector) {
-      base = base.filter(d => d.antenneId === user.antenneId);
-    }
-    if (isCirtSecondary && user.allowedCategories) {
-      base = base.filter(d => user.allowedCategories?.includes(d.categoryId));
-    }
-    return base;
-  }, [dossiers, isAntenneSimple, isAntenneDirector, isCirtSecondary, user]);
-
-  useEffect(() => {
-    if (selectedCategoryId === 'accueil') {
-      setShowRecap(false);
-    }
-  }, [selectedCategoryId]);
-
-  // Filtered dossiers based on user role and filters
-  const filteredDossiers = useMemo(() => {
-    let base = dossiers;
-
-    // 1. Role-based visibility
-    if (isAntenneSimple) {
-      // Agents only see their own dossiers
-      base = base.filter(d => d.createdBy === user.id);
-    } else if (isAntenneDirector) {
-      // Directors see all dossiers from their antenna
-      base = base.filter(d => d.antenneId === user.antenneId);
-    }
-    
-    if (isCirtSecondary && user.allowedCategories) {
-      base = base.filter(d => user.allowedCategories?.includes(d.categoryId));
-    }
-
-    // 2. View-based filtering (Archives vs Main)
-    if (activeTab === 'archives') {
-      base = base.filter(d => d.status === 'ARCHIVED');
-    } else {
-      base = base.filter(d => d.status !== 'ARCHIVED');
-    }
-
-    // 3. Category filter
-    if (selectedCategoryId !== 'accueil') {
-      base = base.filter(d => d.categoryId === selectedCategoryId);
-    }
-
-    // 3. Search query
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      base = base.filter(d => 
-        d.title.toLowerCase().includes(q) || 
-        d.description.toLowerCase().includes(q) ||
-        d.id.toLowerCase().includes(q)
-      );
-    }
-
-    // 4. Advanced filters
-    if (filterAntenne !== 'all') {
-      base = base.filter(d => d.antenneId === filterAntenne);
-    }
-    if (filterYear !== 'all') {
-      base = base.filter(d => d.year === parseInt(filterYear));
-    }
-    if (filterMonth !== 'all') {
-      base = base.filter(d => d.month === parseInt(filterMonth));
-    }
-    if (filterDay !== 'all') {
-      base = base.filter(d => d.day === parseInt(filterDay));
-    }
-
-    return base;
-  }, [dossiers, user, selectedCategoryId, searchQuery, filterAntenne, filterYear, filterMonth, filterDay, activeTab]);
-
-  const handleValidate = async (id: string) => {
-    try {
-      const updated = await api.validateDossier(id);
-      setDossiers(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
-      setSelectedDossier(null);
-    } catch (err: any) {
-      alert(err?.message ?? 'Erreur lors de la validation.');
-    }
-  };
-
-  const handleArchive = async (id: string) => {
-    try {
-      const updated = await api.archiveDossier(id);
-      setDossiers(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
-      setSelectedDossier(null);
-    } catch (err: any) {
-      alert(err?.message ?? 'Erreur lors de l\'archivage.');
-    }
-  };
-
-  const handleAddStep = async (dossierId: string) => {
-    if (!newStepLabel) return;
-    try {
-      const created = await api.createEtape(dossierId, {
-        title: newStepLabel,
-        description: newStepDescription,
-      });
-      const newStep: any = {
-        id: String(created.id),
-        label: created.title,
-        description: created.description,
-        requiredFrom: newStepActor,
-        status: 'PENDING',
-        attachments: [],
-      };
-      setDossiers(prev => prev.map(d =>
-        d.id === dossierId ? { ...d, steps: [...(d.steps || []), newStep] } : d
-      ));
-      setSelectedDossier(prev =>
-        prev ? { ...prev, steps: [...(prev.steps || []), newStep] } : null
-      );
-      setIsAddingStep(false);
-      setNewStepLabel('');
-      setNewStepDescription('');
-    } catch (err: any) {
-      alert(err?.message ?? 'Erreur lors de la création de l\'étape.');
-    }
-  };
-
-  const handleCreateUser = async (newUser: Omit<User, 'id'> & { password?: string; roleId?: number; antenneId?: number }) => {
-    try {
-      await api.createUser({
-        name: newUser.name,
-        email: newUser.username,
-        password: (newUser as any).password ?? 'ChangeMe123!',
-        roleId: (newUser as any).roleId ?? 4,
-        antenneId: (newUser as any).antenneId,
-      });
-      // Recharger depuis l'API pour avoir les données persistées
-      const updatedUsers = await api.getUsers();
-      setUsers(updatedUsers);
-      setIsUserModalOpen(false);
-    } catch (err: any) {
-      alert(err?.message ?? 'Erreur lors de la création de l\'utilisateur.');
-    }
-  };
-
-  const handleDeleteUser = async (id: string) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
-      try {
-        await api.deleteUser(id);
-        const updatedUsers = await api.getUsers();
-        setUsers(updatedUsers);
-      } catch (err: any) {
-        // Si pas d'endpoint DELETE, on supprime juste localement
-        setUsers(prev => prev.filter(u => u.id !== id));
-      }
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
-      {/* API Error banner */}
-      {apiError && (
-        <div className="bg-red-600 text-white px-6 py-3 flex items-center justify-between gap-4 z-50 shrink-0">
-          <div className="flex items-center gap-2 text-sm font-bold">
-            <AlertCircle size={16} />
-            {apiError}
-          </div>
-          <button onClick={loadData} className="flex items-center gap-1 text-xs font-black bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-all">
-            <RefreshCw size={12} /> Réessayer
-          </button>
-        </div>
-      )}
-      {/* Header */}
-      <header className="bg-antic-blue text-white shadow-xl z-50 shrink-0 relative overflow-hidden">
-        {/* Subtle Header Pattern */}
-        <div className="absolute inset-0 opacity-10 pointer-events-none">
-          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <path d="M0 0 L100 100 M100 0 L0 100" stroke="white" strokeWidth="0.1" fill="none" />
-          </svg>
-        </div>
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-8 h-20 flex items-center justify-between gap-4 relative z-10">
-          <div className="flex items-center gap-4 sm:gap-8">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-antic-blue shadow-lg">
-                <Shield size={24} />
-              </div>
-              <div className="hidden sm:block">
-                <h1 className="font-black text-xl leading-tight tracking-tighter">SYNC <span className="text-antic-gold">ANTIC</span></h1>
-                <p className="text-[10px] text-blue-100 font-bold uppercase tracking-widest">Portail de Supervision</p>
-              </div>
-            </div>
-
-            <nav className="hidden md:flex items-center gap-1">
-              <HeaderTab active={activeTab === 'dossiers'} onClick={() => setActiveTab('dossiers')} icon={<FileText size={16} />} label="Dossiers" />
-              {!categories.some(c => c.label.toLowerCase().includes('archive')) && (
-                <HeaderTab active={activeTab === 'archives'} onClick={() => setActiveTab('archives')} icon={<Archive size={16} />} label="Archives" />
-              )}
-              {canManageUsers && (
-                <HeaderTab active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<Users size={16} />} label="Utilisateurs" />
-              )}
-              {canManageAntennes && (
-                <HeaderTab active={activeTab === 'antennes'} onClick={() => setActiveTab('antennes')} icon={<MapPin size={16} />} label="Antennes" />
-              )}
-              {canManageCategories && (
-                <HeaderTab active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} icon={<Settings size={16} />} label="Catégories" />
-              )}
-            </nav>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex flex-col items-end mr-2">
-              <span className="text-xs font-black uppercase tracking-tight">{user.name}</span>
-              <span className="text-[10px] text-blue-200 font-bold uppercase tracking-widest">{user.role.replace('_', ' ')}</span>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-antic-gold flex items-center justify-center text-antic-blue font-black text-sm shadow-lg">
-              {user.name.charAt(0)}
-            </div>
-            <button 
-              onClick={onLogout}
-              className="p-2.5 bg-white/10 hover:bg-red-500 text-white rounded-xl transition-all group"
-              title="Déconnexion"
-            >
-              <LogOut size={20} className="group-hover:translate-x-0.5 transition-transform" />
-            </button>
-            <button className="md:hidden p-2.5 bg-white/10 rounded-xl" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-              <Menu size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Category Bar */}
-        {(activeTab === 'dossiers' || activeTab === 'archives') && (
-          <div className="bg-white/5 border-t border-white/10 overflow-x-auto">
-            <div className="max-w-[1800px] mx-auto px-4 sm:px-8 py-2 flex items-center gap-2">
-              {categories.map(cat => {
-                const Icon = IconMap[cat.icon] || Home;
-                const isActive = selectedCategoryId === cat.id;
-                const isAllowed = !isCirtSecondary || user.allowedCategories?.includes(cat.id) || cat.id === 'accueil';
-                
-                if (!isAllowed) return null;
-
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => setSelectedCategoryId(cat.id)}
-                    className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shrink-0 border-2 ${
-                      isActive 
-                        ? 'bg-antic-gold border-antic-gold text-antic-blue shadow-lg' 
-                        : 'border-transparent text-blue-100 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    <Icon size={14} />
-                    {cat.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col relative">
-        <AnimatePresence mode="wait">
-          {selectedDossier ? (
-            <DossierDetailView 
-              key="detail"
-              dossier={selectedDossier}
-              user={user}
-              onClose={() => setSelectedDossier(null)}
-              onValidate={handleValidate}
-              onArchive={handleArchive}
-              onAddStep={() => setIsAddingStep(true)}
-            />
-          ) : (
-            <motion.div 
-              key="main-content"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex-1 flex flex-col overflow-hidden"
-            >
-              {(activeTab === 'dossiers' || activeTab === 'archives') && (
-                <>
-                  {/* Filters Bar */}
-                  <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4 shrink-0">
-              <div className="max-w-[1800px] mx-auto flex flex-col lg:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full lg:max-w-md">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="text" 
-                    placeholder="Rechercher par titre, description, ID..." 
-                    className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue transition-all"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto overflow-x-auto pb-1">
-                  <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
-                    <Filter size={14} className="text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtres:</span>
-                  </div>
-
-                  {isCirtAffiliated && (
-                    <FilterSelect 
-                      icon={<MapPin size={14} />} 
-                      value={filterAntenne} 
-                      onChange={setFilterAntenne}
-                      options={[{ id: 'all', name: 'Toutes Antennes' }, ...antennes]}
-                    />
-                  )}
-
-                  <FilterSelect 
-                    icon={<Calendar size={14} />} 
-                    value={filterYear} 
-                    onChange={setFilterYear}
-                    options={[{ id: 'all', name: 'Année' }, { id: '2024', name: '2024' }, { id: '2023', name: '2023' }]}
-                  />
-
-                  <FilterSelect 
-                    icon={<Calendar size={14} />} 
-                    value={filterMonth} 
-                    onChange={setFilterMonth}
-                    options={[
-                      { id: 'all', name: 'Mois' },
-                      ...Array.from({ length: 12 }, (_, i) => ({ id: (i + 1).toString(), name: new Date(0, i).toLocaleString('fr', { month: 'long' }) }))
-                    ]}
-                  />
-
-                  {selectedCategoryId !== 'accueil' && (
-                    <button 
-                      onClick={() => setShowRecap(!showRecap)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
-                        showRecap 
-                          ? 'bg-antic-blue border-antic-blue text-white shadow-lg' 
-                          : 'bg-white border-slate-200 text-slate-500 hover:border-antic-blue hover:text-antic-blue'
-                      }`}
-                    >
-                      <Database size={14} />
-                      {showRecap ? 'Voir la Liste' : 'Récapitulatif'}
-                    </button>
-                  )}
-
-                  {canCreateDossier && activeTab === 'dossiers' && (
-                    <button 
-                      onClick={() => setIsUploadModalOpen(true)}
-                      className="ml-auto flex items-center gap-2 bg-antic-green text-white px-6 py-3 rounded-2xl text-xs font-black shadow-lg hover:bg-green-700 transition-all active:scale-95 shrink-0"
-                    >
-                      <Plus size={18} />
-                      NOUVEAU DOSSIER
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Dossiers Grid */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8 relative">
-              {loading && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-3">
-                    <Loader size={32} className="animate-spin text-antic-blue" />
-                    <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Chargement…</p>
-                  </div>
-                </div>
-              )}
-              {/* Subtle Background Pattern */}
-              <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0">
-                <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <defs>
-                    <pattern id="dashboard-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                      <circle cx="1" cy="1" r="1" fill="currentColor" className="text-antic-blue" />
-                    </pattern>
-                  </defs>
-                  <rect width="100%" height="100%" fill="url(#dashboard-grid)" />
-                </svg>
-              </div>
-
-              <div className="max-w-[1800px] mx-auto relative z-10">
-                {showRecap && selectedCategoryId !== 'accueil' ? (
-                  <RecapView 
-                    dossiers={baseDossiersForStats}
-                    antennes={isCirtAffiliated || isSuperAdmin ? antennes : antennes.filter(a => a.id === user.antenneId)}
-                    selectedCategoryId={selectedCategoryId}
-                    filterYear={filterYear}
-                    filterMonth={filterMonth}
-                  />
-                ) : selectedCategoryId === 'accueil' ? (
-                  <div className="space-y-12">
-                    <div className="bg-slate-900 rounded-[40px] p-8 sm:p-16 text-white relative overflow-hidden shadow-2xl">
-                      {/* Fond géométrique SVG — pas d'image externe */}
-                      <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
-                        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-                          <defs>
-                            <pattern id="hero-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="0.5"/>
-                            </pattern>
-                          </defs>
-                          <rect width="100%" height="100%" fill="url(#hero-grid)" />
-                          <circle cx="80%" cy="50%" r="200" fill="white" fillOpacity="0.03"/>
-                          <circle cx="90%" cy="20%" r="120" fill="white" fillOpacity="0.03"/>
-                        </svg>
-                      </div>
-                      <div className="absolute top-0 right-0 w-1/2 h-full bg-antic-gold/10 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/4"></div>
-                      <div className="relative z-10">
-                        <h2 className="text-4xl sm:text-6xl font-black mb-6 tracking-tighter leading-none">
-                          Tableau de <span className="text-antic-gold">Bord</span>
-                        </h2>
-                        <p className="text-slate-400 max-w-2xl text-lg font-medium leading-relaxed">
-                          Bienvenue, <span className="text-white font-bold">{user.name}</span>. 
-                          Vous avez accès à la supervision des dossiers de cybersécurité nationale.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                      {categories.filter(c => c.id !== 'accueil').map(cat => {
-                        const Icon = IconMap[cat.icon] || Home;
-                        const isAllowed = !isCirtSecondary || user.allowedCategories?.includes(cat.id);
-                        if (!isAllowed) return null;
-
-                        const count = dossiers.filter(d => d.categoryId === cat.id && d.status === 'PENDING').length;
-                        
-                        return (
-                          <motion.div 
-                            key={cat.id}
-                            whileHover={{ y: -8, scale: 1.01 }}
-                            onClick={() => setSelectedCategoryId(cat.id)}
-                            className="bg-white p-10 rounded-[40px] border-2 border-slate-100 hover:border-antic-gold shadow-xl hover:shadow-2xl transition-all cursor-pointer group relative overflow-hidden"
-                          >
-                            <div className="w-16 h-16 bg-slate-50 text-antic-blue rounded-2xl flex items-center justify-center mb-8 group-hover:bg-antic-blue group-hover:text-white transition-all duration-300 shadow-inner">
-                              <Icon size={32} />
-                            </div>
-                            <h3 className="text-2xl font-black text-slate-900 mb-3 leading-tight uppercase tracking-tighter">{cat.label}</h3>
-                            <p className="text-sm text-slate-500 font-medium mb-8 leading-relaxed opacity-80">{cat.description}</p>
-                            <div className="flex items-center justify-between pt-6 border-t border-slate-100">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dossiers en attente</span>
-                              <span className={`text-lg font-black px-4 py-1 rounded-2xl ${count > 0 ? 'bg-antic-gold text-antic-blue' : 'bg-slate-100 text-slate-400'}`}>
-                                {count}
-                              </span>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className="w-12 h-12 bg-antic-blue text-white rounded-2xl flex items-center justify-center shadow-lg">
-                            {React.createElement(IconMap[categories.find(c => c.id === selectedCategoryId)?.icon || 'Home'], { size: 24 })}
-                          </div>
-                          <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">
-                            {categories.find(c => c.id === selectedCategoryId)?.label}
-                          </h2>
-                        </div>
-                        <p className="text-slate-500 font-medium ml-1">
-                          {categories.find(c => c.id === selectedCategoryId)?.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    {activeTab === 'dossiers' && (
-                      <div className="flex items-center justify-between gap-4 mb-6">
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => setStatusFilter('ALL')}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === 'ALL' ? 'bg-antic-blue text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200 hover:bg-slate-50'}`}
-                          >
-                            Tous
-                          </button>
-                          <button 
-                            onClick={() => setStatusFilter('PENDING')}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === 'PENDING' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200 hover:bg-slate-50'}`}
-                          >
-                            En Attente
-                          </button>
-                          <button 
-                            onClick={() => setStatusFilter('VALIDATED')}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === 'VALIDATED' ? 'bg-antic-green text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200 hover:bg-slate-50'}`}
-                          >
-                            Validés
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="max-w-4xl">
-                      <DossierColumn 
-                        title={activeTab === 'archives' ? 'Archives' : (statusFilter === 'ALL' ? 'Tous les Dossiers' : statusFilter === 'PENDING' ? 'Dossiers en Attente' : 'Dossiers Validés')} 
-                        icon={activeTab === 'archives' ? <Archive size={16} /> : (statusFilter === 'PENDING' ? <Clock size={16} /> : statusFilter === 'VALIDATED' ? <CheckCircle size={16} /> : <FileText size={16} />)} 
-                        dossiers={activeTab === 'archives' ? filteredDossiers : filteredDossiers.filter(d => statusFilter === 'ALL' ? true : d.status === statusFilter)} 
-                        color={activeTab === 'archives' ? 'bg-slate-400' : (statusFilter === 'PENDING' ? 'bg-slate-900' : statusFilter === 'VALIDATED' ? 'bg-antic-green' : 'bg-antic-blue')} 
-                        accent="bg-white"
-                        onSelect={setSelectedDossier}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {activeTab === 'users' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-8">
-            <div className="max-w-[1200px] mx-auto space-y-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">Gestion des Comptes</h2>
-                  <p className="text-slate-500 font-medium">Créez et gérez les accès des utilisateurs sous votre autorité.</p>
-                </div>
-                <button 
-                  onClick={() => setIsUserModalOpen(true)}
-                  className="flex items-center gap-2 bg-antic-blue text-white px-6 py-3 rounded-2xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all"
-                >
-                  <UserPlus size={18} />
-                  NOUVEL UTILISATEUR
-                </button>
-              </div>
-
-              <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-xl">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Utilisateur</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Rôle</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Affiliation</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {users.map(u => {
-                      // Visibility logic for user management
-                      const canSee = isSuperAdmin || 
-                                    (isCirtAdmin && u.role === 'CIRT_SECONDARY') ||
-                                    (isAntenneDirector && u.role === 'ANTENNE_SIMPLE' && u.antenneId === user.antenneId);
-                      
-                      if (!canSee && u.id !== user.id) return null;
-
-                      return (
-                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-8 py-5">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-black text-sm">
-                                {u.name.charAt(0)}
-                              </div>
-                              <div>
-                                <p className="text-sm font-black text-slate-900">{u.name}</p>
-                                <p className="text-xs text-slate-400 font-medium">@{u.username}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-8 py-5">
-                            <span className="px-3 py-1 bg-blue-50 text-antic-blue rounded-lg text-[10px] font-black uppercase tracking-widest border border-blue-100">
-                              {u.role.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-8 py-5">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${u.affiliation === 'CIRT' ? 'bg-antic-blue' : 'bg-antic-gold'}`}></span>
-                              <span className="text-xs font-bold text-slate-600">
-                                {u.affiliation} {u.antenneId ? `(${antennes.find(a => a.id === u.antenneId)?.name})` : ''}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-8 py-5 text-right">
-                            {u.id !== user.id && (
-                              <button 
-                                onClick={() => handleDeleteUser(u.id)}
-                                className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'antennes' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-8">
-            <div className="max-w-[1200px] mx-auto space-y-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">Gestion des Antennes</h2>
-                  <p className="text-slate-500 font-medium">Configurez les antennes régionales de l'ANTIC.</p>
-                </div>
-                {isSuperAdmin && (
-                  <button 
-                    onClick={() => setIsAntenneModalOpen(true)}
-                    className="flex items-center gap-2 bg-antic-blue text-white px-6 py-3 rounded-2xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all"
-                  >
-                    <Plus size={18} />
-                    NOUVELLE ANTENNE
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {antennes.map(a => (
-                  <div key={a.id} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-lg flex items-center gap-4">
-                    <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-antic-blue">
-                      <MapPin size={24} />
-                    </div>
-                    <div>
-                      <h3 className="font-black text-slate-900 uppercase tracking-tight">{a.name}</h3>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{a.location}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'categories' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-8">
-            <div className="max-w-[1200px] mx-auto space-y-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">Catégories de Traitement</h2>
-                  <p className="text-slate-500 font-medium">Définissez les types de dossiers gérés par la plateforme.</p>
-                </div>
-                <button 
-                  onClick={() => setIsCategoryModalOpen(true)}
-                  className="flex items-center gap-2 bg-antic-blue text-white px-6 py-3 rounded-2xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all"
-                >
-                  <Plus size={18} />
-                  NOUVELLE CATÉGORIE
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {categories.filter(c => c.id !== 'accueil').map(c => (
-                  <div key={c.id} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-lg">
-                    <div className="flex items-center gap-4 mb-4">
-                      <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-antic-blue">
-                        {React.createElement(IconMap[c.icon] || Home, { size: 20 })}
-                      </div>
-                      <h3 className="font-black text-slate-900 uppercase tracking-tight">{c.label}</h3>
-                    </div>
-                    <p className="text-xs text-slate-500 font-medium leading-relaxed">{c.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-
-      {/* Modals */}
-      <AnimatePresence>
-        {isAddingStep && selectedDossier && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAddingStep(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl p-8">
-              <h3 className="text-2xl font-black text-slate-900 mb-6 uppercase tracking-tighter">Nouvelle Étape</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Libellé de l'étape</label>
-                  <input 
-                    type="text" 
-                    value={newStepLabel}
-                    onChange={(e) => setNewStepLabel(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-antic-blue outline-none transition-all"
-                    placeholder="Ex: Validation technique"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Description</label>
-                  <textarea 
-                    value={newStepDescription}
-                    onChange={(e) => setNewStepDescription(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-antic-blue outline-none transition-all h-24 resize-none"
-                    placeholder="Détails sur les documents attendus..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Responsable</label>
-                  <select 
-                    value={newStepActor}
-                    onChange={(e) => setNewStepActor(e.target.value as StepActor)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-antic-blue outline-none transition-all"
-                  >
-                    <option value="REALIZATION">Équipe Réalisation (Antenne)</option>
-                    <option value="SUPERVISION">Équipe Supervision (CIRT)</option>
-                  </select>
-                </div>
-                <div className="pt-4 flex gap-3">
-                  <button onClick={() => setIsAddingStep(false)} className="flex-1 px-6 py-3 rounded-xl text-xs font-black text-slate-500 hover:bg-slate-100 transition-all uppercase tracking-widest">Annuler</button>
-                  <button onClick={() => handleAddStep(selectedDossier.id)} className="flex-1 bg-antic-blue text-white px-6 py-3 rounded-xl text-xs font-black hover:bg-blue-700 transition-all uppercase tracking-widest">Ajouter</button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-        {isUploadModalOpen && (
-          <UploadDossierModal 
-            user={user}
-            categoryId={selectedCategoryId === 'accueil' ? (categories.find(c => c.id !== 'accueil')?.id ?? '') : selectedCategoryId}
-            onClose={() => setIsUploadModalOpen(false)}
-            onUpload={(d: Dossier) => {
-              setDossiers(prev => [d, ...prev]);
-              setIsUploadModalOpen(false);
-            }}
-          />
-        )}
-        {isUserModalOpen && (
-          <CreateUserModal 
-            currentUser={user}
-            onClose={() => setIsUserModalOpen(false)}
-            onCreate={handleCreateUser}
-          />
-        )}
-        {isAntenneModalOpen && (
-          <CreateAntenneModal 
-            onClose={() => setIsAntenneModalOpen(false)}
-            onCreate={(a) => {
-              setAntennes(prev => [...prev, { ...a, id: a.name.toLowerCase().replace(/\s+/g, '-') }]);
-              setIsAntenneModalOpen(false);
-            }}
-          />
-        )}
-        {isCategoryModalOpen && (
-          <CreateCategoryModal 
-            onClose={() => setIsCategoryModalOpen(false)}
-            onCreate={async (c) => {
-              try {
-                const created = await api.createCategory(c.label);
-                setCategories(prev => [...prev, created]);
-                setIsCategoryModalOpen(false);
-              } catch (err: any) {
-                alert(err?.message ?? 'Erreur lors de la création de la catégorie.');
-              }
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-// --- Sub-components ---
-
-const HeaderTab: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
-  <button 
-    onClick={onClick}
-    className={`px-6 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-      active ? 'bg-white text-antic-blue shadow-lg' : 'text-blue-100 hover:bg-white/10 hover:text-white'
-    }`}
-  >
-    {icon}
-    {label}
-  </button>
-);
-
-const FilterSelect: React.FC<{ icon: React.ReactNode; value: string; onChange: (v: string) => void; options: { id: string; name: string }[] }> = ({ icon, value, onChange, options }) => (
-  <div className="relative group">
-    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-antic-blue transition-colors">
-      {icon}
-    </div>
-    <select 
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue appearance-none cursor-pointer hover:bg-white transition-all"
-    >
-      {options.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
-    </select>
-    <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-  </div>
-);
-
-const DossierColumn: React.FC<{ title: string; icon: React.ReactNode; dossiers: Dossier[]; color: string; accent: string; onSelect: (d: Dossier) => void }> = ({ title, icon, dossiers, color, accent, onSelect }) => (
-  <section className="flex flex-col h-full min-h-[500px]">
-    <div className={`flex items-center justify-between p-6 ${color} rounded-t-[32px] text-white shadow-lg`}>
-      <div className="flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-xl ${accent} flex items-center justify-center text-slate-900 shadow-inner`}>
-          {icon}
-        </div>
-        <h3 className="font-black uppercase tracking-tighter text-lg">{title}</h3>
-      </div>
-      <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black tracking-widest">
-        {dossiers.length}
-      </span>
-    </div>
-    <div className="flex-1 bg-white border-x border-b border-slate-200 rounded-b-[32px] p-4 space-y-4 overflow-y-auto shadow-inner">
-      {dossiers.length > 0 ? (
-        dossiers.map(d => (
-          <motion.div 
-            key={d.id}
-            layoutId={d.id}
-            onClick={() => onSelect(d)}
-            className="bg-slate-50 border border-slate-200 p-5 rounded-2xl hover:bg-white hover:shadow-xl hover:border-antic-gold transition-all cursor-pointer group"
-          >
-            <div className="flex justify-between items-start mb-3">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">#{d.id}</span>
-              <div className="flex items-center gap-1.5 text-slate-400">
-                <File size={12} />
-                <span className="text-[10px] font-black">{d.attachments.length}</span>
-              </div>
-            </div>
-            <h4 className="font-black text-slate-900 group-hover:text-antic-blue transition-colors uppercase tracking-tight leading-tight mb-2">{d.title}</h4>
-            <p className="text-[11px] text-slate-500 font-medium line-clamp-2 mb-4">{d.description}</p>
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200/50">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-antic-gold/20 flex items-center justify-center text-[9px] font-black text-antic-blue">
-                  {d.antenneName.split(' ')[1]?.[0] || 'C'}
-                </div>
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight">{d.antenneName}</span>
-              </div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                {new Date(d.createdAt).toLocaleDateString('fr-FR')}
-              </span>
-            </div>
-          </motion.div>
-        ))
-      ) : (
-        <div className="h-full flex flex-col items-center justify-center text-slate-300 py-12">
-          <FileText size={40} className="mb-4 opacity-20" />
-          <p className="text-[10px] font-black uppercase tracking-widest">Aucun dossier</p>
-        </div>
-      )}
-    </div>
-  </section>
-);
-
-const DossierDetailView: React.FC<{ 
-  dossier: Dossier; 
-  user: User;
-  onClose: () => void; 
-  onValidate: (id: string) => void;
-  onArchive: (id: string) => void;
-  onAddStep: () => void;
-}> = ({ dossier, user, onClose, onValidate, onArchive, onAddStep }) => {
-  const canValidate = (user.role === 'SUPER_ADMIN' || user.role === 'CIRT_ADMIN') && dossier.status === 'PENDING';
-  const canArchive = (user.role === 'SUPER_ADMIN' || user.role === 'CIRT_ADMIN' || user.role === 'ANTENNE_DIRECTOR') && dossier.status === 'VALIDATED';
-  const canAddStep = user.role === 'SUPER_ADMIN' || user.role === 'CIRT_ADMIN' || user.role === 'ANTENNE_DIRECTOR';
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className="flex-1 bg-white flex flex-col overflow-y-auto"
-    >
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-100 p-6 sm:p-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-        <div className="flex items-center gap-6">
-          <button onClick={onClose} className="p-3 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-slate-900">
-            <X size={24} />
-          </button>
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dossier #{dossier.id}</span>
-              <StatusBadge status={dossier.status} />
-            </div>
-            <h3 className="text-3xl sm:text-4xl font-black text-slate-900 uppercase tracking-tighter leading-none">{dossier.title}</h3>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          {canAddStep && (
-            <button onClick={onAddStep} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-100 text-slate-900 px-6 py-4 rounded-2xl text-xs font-black hover:bg-slate-200 transition-all uppercase tracking-widest">
-              <Plus size={18} /> Nouvelle Étape
-            </button>
-          )}
-          {canArchive && (
-            <button onClick={() => onArchive(dossier.id)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-4 rounded-2xl text-xs font-black hover:bg-slate-800 transition-all uppercase tracking-widest">
-              <Archive size={18} /> Archiver
-            </button>
-          )}
-          {canValidate && (
-            <button onClick={() => onValidate(dossier.id)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-antic-blue text-white px-8 py-4 rounded-2xl text-xs font-black shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 uppercase tracking-widest">
-              <Check size={20} /> Valider
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="p-6 sm:p-10 max-w-[1400px] w-full mx-auto space-y-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          <div className="lg:col-span-2 space-y-12">
-            <section>
-              <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-antic-blue"></div>
-                Description du Dossier
-              </h4>
-              <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-100 text-base text-slate-600 font-medium leading-relaxed shadow-inner">
-                {dossier.description}
-              </div>
-            </section>
-
-            <section>
-              <div className="flex items-center justify-between mb-8">
-                <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-antic-gold"></div>
-                  Étapes de Traitement ({dossier.steps?.length || 0})
-                </h4>
-              </div>
-              
-              <div className="relative space-y-6 before:absolute before:left-6 before:top-8 before:bottom-8 before:w-0.5 before:bg-slate-100">
-                {dossier.steps?.map((step, idx) => (
-                  <div key={step.id} className="relative pl-16 group">
-                    <div className={`absolute left-0 top-2 w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black shadow-lg transition-all z-10 ${step.status === 'COMPLETED' ? 'bg-antic-green text-white scale-110' : 'bg-white border-2 border-slate-100 text-slate-400 group-hover:border-antic-blue group-hover:text-antic-blue'}`}>
-                      {step.status === 'COMPLETED' ? <Check size={20} /> : idx + 1}
-                    </div>
-                    
-                    <div className="bg-white border border-slate-200 rounded-[32px] p-8 shadow-sm hover:shadow-xl transition-all border-l-4 border-l-transparent hover:border-l-antic-blue">
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-                        <div>
-                          <h4 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-1">{step.label}</h4>
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest ${step.requiredFrom === 'SUPERVISION' ? 'bg-blue-50 text-antic-blue' : 'bg-purple-50 text-purple-600'}`}>
-                              {step.requiredFrom === 'SUPERVISION' ? 'Supervision' : 'Réalisation'}
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">• {step.status === 'COMPLETED' ? 'Terminé' : 'En attente'}</span>
-                          </div>
-                        </div>
-                        {step.status === 'PENDING' && (
-                          <button className="flex items-center gap-2 bg-slate-50 hover:bg-antic-blue hover:text-white px-4 py-2 rounded-xl text-[10px] font-black text-slate-600 uppercase tracking-widest transition-all">
-                            <Upload size={14} />
-                            Fournir
-                          </button>
-                        )}
-                      </div>
-                      
-                      <p className="text-sm text-slate-500 font-medium mb-6 leading-relaxed">{step.description}</p>
-                      
-                      {step.attachments.length > 0 && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {step.attachments.map(at => (
-                            <a key={at.id} href={at.url} className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-antic-blue transition-all group/file">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 group-hover/file:text-antic-blue shadow-sm">
-                                  <File size={20} />
-                                </div>
-                                <div>
-                                  <p className="text-xs font-black text-slate-700 truncate max-w-[150px]">{at.name}</p>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{at.size}</p>
-                                </div>
-                              </div>
-                              <Download size={14} className="text-slate-300 group-hover/file:text-antic-blue" />
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                
-                {(!dossier.steps || dossier.steps.length === 0) && (
-                  <div className="pl-16 py-12 text-center sm:text-left">
-                    <p className="text-slate-400 font-medium italic">Aucune étape définie pour ce dossier.</p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section>
-              <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                Documents Généraux ({dossier.attachments.length})
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {dossier.attachments.map(file => (
-                  <div key={file.id} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[28px] hover:border-antic-blue transition-all group shadow-sm hover:shadow-lg">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-antic-blue group-hover:text-white transition-all shadow-inner">
-                        <File size={28} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-slate-800 mb-1">{file.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{file.size} • {file.type.split('/')[1].toUpperCase()}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button className="p-3 text-slate-400 hover:text-antic-blue hover:bg-blue-50 rounded-xl transition-all"><Eye size={18} /></button>
-                      <button className="p-3 text-slate-400 hover:text-antic-blue hover:bg-blue-50 rounded-xl transition-all"><Download size={18} /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <div className="space-y-8">
-            <div className="sticky top-40 space-y-8">
-              <InfoCard title="Informations" icon={<MapPin size={14} />}>
-                <InfoRow label="Antenne" value={dossier.antenneName} />
-                <InfoRow label="Créé par" value={dossier.createdBy || 'Inconnu'} />
-                <InfoRow label="Date de création" value={new Date(dossier.createdAt).toLocaleDateString('fr-FR')} />
-                <InfoRow label="Catégorie" value={categories.find(c => c.id === dossier.categoryId)?.label || 'Inconnue'} />
-              </InfoCard>
-
-              {dossier.status === 'VALIDATED' && (
-                <InfoCard title="Validation" icon={<CheckCircle size={14} />} color="bg-green-50" borderColor="border-green-100">
-                  <InfoRow label="Validé par" value={dossier.validatedBy || 'CIRT'} />
-                  <InfoRow label="Le" value={new Date(dossier.validatedAt!).toLocaleDateString('fr-FR')} />
-                </InfoCard>
-              )}
-
-              {dossier.status === 'ARCHIVED' && (
-                <InfoCard title="Archivage" icon={<Archive size={14} />} color="bg-slate-100" borderColor="border-slate-200">
-                  <InfoRow label="Archivé par" value={dossier.archivedBy || 'Supervision'} />
-                  <InfoRow label="Le" value={new Date(dossier.archivedAt!).toLocaleDateString('fr-FR')} />
-                </InfoCard>
-              )}
-
-              <div className="bg-slate-900 rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-antic-gold/20 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2"></div>
-                <h5 className="text-xs font-black uppercase tracking-widest text-antic-gold mb-4">Statistiques</h5>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-end">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progression</span>
-                    <span className="text-xl font-black">{Math.round(((dossier.steps?.filter(s => s.status === 'COMPLETED').length || 0) / (dossier.steps?.length || 1)) * 100)}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-antic-gold transition-all duration-1000" 
-                      style={{ width: `${((dossier.steps?.filter(s => s.status === 'COMPLETED').length || 0) / (dossier.steps?.length || 1)) * 100}%` }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPOSANTS DE BASE
+// ─────────────────────────────────────────────────────────────────────────────
 
 const StatusBadge: React.FC<{ status: DossierStatus }> = ({ status }) => {
-  const styles = {
-    PENDING: 'bg-antic-gold text-antic-blue',
-    VALIDATED: 'bg-antic-green text-white',
-    ARCHIVED: 'bg-slate-400 text-white'
-  };
+  const c = STATUS_CFG[status];
   return (
-    <span className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-widest ${styles[status]}`}>
-      {status === 'PENDING' ? 'EN ATTENTE' : status === 'VALIDATED' ? 'VALIDÉ' : 'ARCHIVÉ'}
+    <span style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:99, fontSize:11, fontWeight:600, background:c.bg, color:c.text, border:`1px solid ${c.border}` }}>
+      <span style={{ width:5, height:5, borderRadius:'50%', background:c.dot, flexShrink:0 }}/>
+      {c.label}
     </span>
   );
 };
 
-const InfoCard: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode; color?: string; borderColor?: string }> = ({ title, icon, children, color = "bg-slate-50", borderColor = "border-slate-100" }) => (
-  <section className={`${color} p-6 rounded-[24px] border ${borderColor}`}>
-    <div className="flex items-center gap-2 mb-4">
-      <div className="text-slate-400">{icon}</div>
-      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</h4>
-    </div>
-    <div className="space-y-3">{children}</div>
-  </section>
-);
+const RoleBadge: React.FC<{ role: UserRole }> = ({ role }) => {
+  const colors: Record<string, string> = {
+    super_admin:'#7c3aed', admin_cirt:'#0057a8', chef_service:'#0891b2',
+    directeur_antenne:'#1b8a4e', agent_cirt:'#0070cc', agent_antenne:'#6b7280',
+  };
+  return (
+    <span style={{ display:'inline-flex', padding:'2px 9px', borderRadius:99, fontSize:11, fontWeight:600, background:colors[role]??'#64748b', color:'white' }}>
+      {ROLE_LABELS[role]}
+    </span>
+  );
+};
 
-const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="flex justify-between text-xs">
-    <span className="text-slate-500 font-bold uppercase tracking-widest">{label}</span>
-    <span className="font-black text-slate-900">{value}</span>
+const Modal: React.FC<{ title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; width?: number }> = ({
+  title, subtitle, onClose, children, width = 520
+}) => (
+  <div style={{ position:'fixed', inset:0, zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(0,40,85,0.55)', backdropFilter:'blur(6px)' }}
+    onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div style={{ background:'white', borderRadius:16, boxShadow:'0 24px 64px rgba(0,40,85,0.2)', width:'100%', maxWidth:width, maxHeight:'90vh', overflow:'hidden', display:'flex', flexDirection:'column' }}
+         className="anim-fadeup">
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', padding:'20px 24px', borderBottom:'1px solid #e8edf5' }}>
+        <div>
+          <h3 style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:17, color:'#0d1b2a' }}>{title}</h3>
+          {subtitle && <p style={{ fontSize:12, color:'#5a6a7e', marginTop:3 }}>{subtitle}</p>}
+        </div>
+        <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8', padding:4, borderRadius:6, display:'flex' }}>
+          <X size={18}/>
+        </button>
+      </div>
+      <div style={{ padding:24, overflowY:'auto', flex:1 }}>{children}</div>
+    </div>
   </div>
 );
 
-const UploadDossierModal: React.FC<{ user: User; categoryId: CategoryId; onClose: () => void; onUpload: (d: Dossier) => void }> = ({ user, categoryId, onClose, onUpload }) => {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [antenneId, setAntenneId] = useState(user.antenneId || STATIC_ANTENNES[0].id);
-  const [files, setFiles] = useState<File[]>([]);
-  const [submitting, setSubmitting] = useState(false);
+const Field: React.FC<{ label: string; required?: boolean; hint?: string; children: React.ReactNode }> = ({ label, required, hint, children }) => (
+  <div>
+    <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#003366', marginBottom:6, letterSpacing:'0.07em', textTransform:'uppercase' }}>
+      {label}{required && <span style={{ color:'#dc2626', marginLeft:3 }}>*</span>}
+    </label>
+    {children}
+    {hint && <p style={{ fontSize:11, color:'#94a3b8', marginTop:4 }}>{hint}</p>}
+  </div>
+);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title || !description) return;
-    setSubmitting(true);
+const inputS: React.CSSProperties = {
+  width:'100%', padding:'10px 13px', background:'#f8fafd',
+  border:'1.5px solid #dde3ed', borderRadius:8, fontSize:13,
+  color:'#0d1b2a', outline:'none', transition:'border-color 0.2s, box-shadow 0.2s',
+  fontFamily:'Outfit, sans-serif',
+};
+const focusHandlers = {
+  onFocus: (e: React.FocusEvent<any>) => { e.target.style.borderColor='#0057a8'; e.target.style.boxShadow='0 0 0 3px rgba(0,87,168,0.1)'; },
+  onBlur:  (e: React.FocusEvent<any>) => { e.target.style.borderColor='#dde3ed'; e.target.style.boxShadow='none'; },
+};
+const Inp = (props: React.InputHTMLAttributes<HTMLInputElement>) =>
+  <input {...props} style={{ ...inputS, ...props.style }} {...focusHandlers}/>;
+const Sel = (props: React.SelectHTMLAttributes<HTMLSelectElement>) =>
+  <select {...props} style={{ ...inputS, cursor:'pointer', ...props.style }} {...focusHandlers}/>;
+const Txa = (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) =>
+  <textarea {...props} style={{ ...inputS, minHeight:80, resize:'vertical', ...props.style }} {...focusHandlers}/>;
+
+const Btn: React.FC<{
+  variant?: 'primary'|'secondary'|'danger'|'ghost'|'success';
+  children: React.ReactNode; onClick?: () => void;
+  type?: 'button'|'submit'; disabled?: boolean; small?: boolean; full?: boolean;
+}> = ({ variant='primary', children, onClick, type='button', disabled, small, full }) => {
+  const s: Record<string, React.CSSProperties> = {
+    primary:   { background:disabled?'#93c5fd':'#0057a8', color:'white', border:'none', boxShadow:disabled?'none':'0 2px 10px rgba(0,87,168,0.28)' },
+    secondary: { background:'white', color:'#0057a8', border:'1.5px solid #c5d8f0' },
+    danger:    { background:'#dc2626', color:'white', border:'none' },
+    ghost:     { background:'transparent', color:'#5a6a7e', border:'1.5px solid #e8edf5' },
+    success:   { background:'#16a34a', color:'white', border:'none' },
+  };
+  return (
+    <button type={type} onClick={onClick} disabled={disabled}
+      style={{ display:'inline-flex', alignItems:'center', gap:6, padding:small?'6px 12px':'10px 18px', borderRadius:8, border:'none', fontSize:small?12:13, fontWeight:600, cursor:disabled?'not-allowed':'pointer', transition:'all 0.15s', fontFamily:'Outfit,sans-serif', whiteSpace:'nowrap', width:full?'100%':'auto', justifyContent:'center', ...s[variant] }}
+    >{children}</button>
+  );
+};
+
+const ErrBox: React.FC<{ msg: string }> = ({ msg }) => (
+  <div style={{ display:'flex', gap:8, padding:'10px 14px', background:'#fef2f2', borderRadius:8, border:'1px solid #fecaca' }}>
+    <AlertCircle size={14} color="#dc2626" style={{ flexShrink:0, marginTop:1 }}/>
+    <span style={{ fontSize:12, color:'#991b1b' }}>{msg}</span>
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODAL : GESTION DES CATÉGORIES D'UN UTILISATEUR
+// ─────────────────────────────────────────────────────────────────────────────
+const ModalCategories: React.FC<{
+  targetUser: User;
+  allCategories: Category[];
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ targetUser, allCategories, onClose, onSaved }) => {
+  const [perms, setPerms]   = useState<PermissionCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState<number | null>(null);
+  const [error, setError]     = useState('');
+
+  useEffect(() => {
+    api.getUserPermissions(targetUser.id)
+      .then(setPerms)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [targetUser.id]);
+
+  const isGranted = (catId: number) => perms.some(p => p.category.id === catId);
+
+  const toggle = async (cat: Category) => {
+    setSaving(cat.id); setError('');
     try {
-      const created = await api.createDossier({ title, description, categoryId });
-      onUpload(created);
-      onClose();
-    } catch (err: any) {
-      alert(err?.message ?? 'Erreur lors de la création du dossier.');
-    } finally {
-      setSubmitting(false);
+      if (isGranted(cat.id)) {
+        await api.revokeCategoryPermission(targetUser.id, cat.id);
+        setPerms(prev => prev.filter(p => p.category.id !== cat.id));
+      } else {
+        const newPerm = await api.grantCategoryPermission(targetUser.id, cat.id);
+        setPerms(prev => [...prev, newPerm]);
+      }
+      onSaved();
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(null); }
+  };
+
+  return (
+    <Modal title="Catégories autorisées" subtitle={`${targetUser.name} · ${ROLE_LABELS[targetUser.role]}`} onClose={onClose} width={480}>
+      {error && <div style={{ marginBottom:16 }}><ErrBox msg={error}/></div>}
+      {loading ? (
+        <div style={{ display:'flex', justifyContent:'center', padding:32 }}>
+          <Loader2 size={24} color="#0057a8" style={{ animation:'spin 1s linear infinite' }}/>
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          <p style={{ fontSize:12, color:'#5a6a7e', marginBottom:8, lineHeight:1.5 }}>
+            Activez les catégories auxquelles cet utilisateur peut accéder.
+            Les dossiers et menus seront filtrés en conséquence.
+          </p>
+          {allCategories.map(cat => {
+            const Icon    = CAT_ICONS[cat.name] ?? FileText;
+            const granted = isGranted(cat.id);
+            const busy    = saving === cat.id;
+            const idx     = allCategories.indexOf(cat);
+            const color   = CAT_COLORS[idx % CAT_COLORS.length];
+            return (
+              <div key={cat.id}
+                onClick={() => !busy && toggle(cat)}
+                style={{
+                  display:'flex', alignItems:'center', gap:14, padding:'12px 14px',
+                  borderRadius:10, border:`1.5px solid ${granted ? color : '#e8edf5'}`,
+                  background: granted ? `${color}0d` : '#f8fafd',
+                  cursor: busy ? 'wait' : 'pointer', transition:'all 0.15s',
+                }}>
+                <div style={{ width:36, height:36, borderRadius:8, background:`${color}20`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <Icon size={16} color={color}/>
+                </div>
+                <span style={{ flex:1, fontSize:13, fontWeight:600, color:'#0d1b2a' }}>{cat.name}</span>
+                {busy ? (
+                  <Loader2 size={16} color={color} style={{ animation:'spin 1s linear infinite' }}/>
+                ) : granted ? (
+                  <div style={{ width:22, height:22, borderRadius:'50%', background:color, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <Check size={13} color="white"/>
+                  </div>
+                ) : (
+                  <div style={{ width:22, height:22, borderRadius:'50%', border:'2px solid #dde3ed' }}/>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODAL : MODIFIER SON PROFIL
+// ─────────────────────────────────────────────────────────────────────────────
+const ModalProfile: React.FC<{ user: User; onClose: () => void; onSaved: (u: User) => void }> = ({
+  user, onClose, onSaved
+}) => {
+  const [name, setName]         = useState(user.name);
+  const [email, setEmail]       = useState(user.email);
+  const [pwd, setPwd]           = useState('');
+  const [confirm, setConfirm]   = useState('');
+  const [showPwd, setShowPwd]   = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
+  const [success, setSuccess]   = useState('');
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault(); setError(''); setSuccess('');
+    if (pwd && pwd !== confirm) { setError('Les mots de passe ne correspondent pas'); return; }
+    setSaving(true);
+    try {
+      const payload: api.UpdateProfilePayload = {};
+      if (name  !== user.name)  payload.name  = name;
+      if (email !== user.email) payload.email = email;
+      if (pwd)                  payload.password = pwd;
+      if (Object.keys(payload).length === 0) { setError('Aucune modification détectée'); setSaving(false); return; }
+      const updated = await api.updateProfile(payload);
+      setSuccess('Profil mis à jour avec succès !');
+      onSaved(updated);
+      setPwd(''); setConfirm('');
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Modal title="Mon profil" subtitle="Modifier vos informations personnelles" onClose={onClose} width={460}>
+      <form onSubmit={handleSave} style={{ display:'flex', flexDirection:'column', gap:14 }}>
+        {error   && <ErrBox msg={error}/>}
+        {success && (
+          <div style={{ display:'flex', gap:8, padding:'10px 14px', background:'#f0fdf4', borderRadius:8, border:'1px solid #bbf7d0' }}>
+            <Check size={14} color="#16a34a" style={{ flexShrink:0, marginTop:1 }}/>
+            <span style={{ fontSize:12, color:'#14532d', fontWeight:600 }}>{success}</span>
+          </div>
+        )}
+
+        <Field label="Nom complet" required>
+          <Inp value={name} onChange={e => setName(e.target.value)} required/>
+        </Field>
+
+        <Field label="Adresse e-mail" required hint="Si vous changez votre email, vous devrez vous reconnecter.">
+          <Inp type="email" value={email} onChange={e => setEmail(e.target.value)} required/>
+        </Field>
+
+        <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:14, marginTop:4 }}>
+          <p style={{ fontSize:11, fontWeight:700, color:'#5a6a7e', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:12 }}>
+            Changer le mot de passe (optionnel)
+          </p>
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            <Field label="Nouveau mot de passe">
+              <div style={{ position:'relative' }}>
+                <Inp type={showPwd?'text':'password'} value={pwd} onChange={e=>setPwd(e.target.value)} placeholder="Laisser vide pour ne pas changer" style={{ paddingRight:40 }}/>
+                <button type="button" onClick={()=>setShowPwd(v=>!v)}
+                  style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', display:'flex' }}>
+                  {showPwd ? <EyeOff size={15}/> : <Eye size={15}/>}
+                </button>
+              </div>
+            </Field>
+            {pwd && (
+              <Field label="Confirmer le mot de passe">
+                <Inp type={showPwd?'text':'password'} value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="Répéter le mot de passe"/>
+              </Field>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display:'flex', gap:10, paddingTop:4 }}>
+          <Btn variant="ghost" onClick={onClose}>Annuler</Btn>
+          <Btn type="submit" disabled={saving} full>{saving ? 'Enregistrement…' : <><Save size={13}/> Enregistrer</>}</Btn>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIDEBAR
+// ─────────────────────────────────────────────────────────────────────────────
+const Sidebar: React.FC<{
+  user: User; active: Tab; onChange: (t: Tab) => void;
+  onLogout: () => void; onEditProfile: () => void;
+  collapsed: boolean; onToggle: () => void;
+}> = ({ user, active, onChange, onLogout, onEditProfile, collapsed, onToggle }) => {
+  const tabs: { id: Tab; label: string; icon: React.ElementType; show: boolean }[] = [
+    { id:'dashboard',   label:'Tableau de bord', icon:Activity,   show:canViewStats(user.role) },
+    { id:'dossiers',    label:'Dossiers',        icon:FileText,   show:true },
+    { id:'stats',       label:'Statistiques',   icon:BarChart3,  show:canViewStats(user.role) },
+    { id:'users',       label:'Utilisateurs',   icon:Users,      show:canCreateUsers(user.role) },
+    { id:'antennes',    label:'Antennes',        icon:MapPin,     show:canManageAntennes(user.role) },
+    { id:'organisation',label:'Organisation',   icon:Building2,  show:['super_admin','admin_cirt'].includes(user.role) },
+    { id:'categories',  label:'Catégories',     icon:Key,        show:user.role==='super_admin' },
+  ];
+  const W = collapsed ? 68 : 240;
+  return (
+    <aside style={{ width:W, minWidth:W, height:'100vh', display:'flex', flexDirection:'column', background:'var(--sidebar-bg)', transition:'width 0.25s cubic-bezier(.4,0,.2,1)', flexShrink:0, overflow:'hidden' }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:collapsed?'18px 16px':'18px 16px 18px 20px', borderBottom:'1px solid var(--sidebar-border)', minHeight:68 }}>
+        {!collapsed && (
+          <div style={{ display:'flex', alignItems:'center', gap:10, overflow:'hidden' }}>
+            <div style={{ width:34, height:34, borderRadius:8, background:'var(--antic-blue)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <Shield size={18} color="white"/>
+            </div>
+            <div>
+              <p style={{ color:'white', fontWeight:800, fontSize:14, whiteSpace:'nowrap', letterSpacing:'0.05em' }}>SYNC ANTIC</p>
+              <p style={{ color:'rgba(255,255,255,0.4)', fontSize:9, letterSpacing:'0.15em', textTransform:'uppercase' }}>CIRT Platform</p>
+            </div>
+          </div>
+        )}
+        {collapsed && (
+          <div style={{ width:34, height:34, borderRadius:8, background:'var(--antic-blue)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto' }}>
+            <Shield size={18} color="white"/>
+          </div>
+        )}
+        <button onClick={onToggle} style={{ background:'none', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.4)', padding:4, borderRadius:6, display:'flex', flexShrink:0, marginLeft:collapsed?0:'auto' }}>
+          <Menu size={17}/>
+        </button>
+      </div>
+
+      {/* Nav */}
+      <nav style={{ flex:1, padding:'8px', overflowY:'auto' }}>
+        {tabs.filter(t => t.show).map(tab => {
+          const Icon = tab.icon;
+          const isActive = active === tab.id;
+          return (
+            <button key={tab.id} onClick={() => onChange(tab.id)} title={collapsed?tab.label:undefined}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:collapsed?'10px 0':'10px 12px', justifyContent:collapsed?'center':'flex-start', borderRadius:8, border:'none', cursor:'pointer', marginBottom:2, background:isActive?'var(--sidebar-active)':'transparent', color:isActive?'white':'var(--sidebar-text)', borderLeft:isActive?'3px solid var(--antic-gold)':'3px solid transparent', transition:'all 0.15s', fontFamily:'Outfit,sans-serif' }}
+              onMouseEnter={e => { if(!isActive)(e.currentTarget as HTMLElement).style.background='var(--sidebar-hover)'; }}
+              onMouseLeave={e => { if(!isActive)(e.currentTarget as HTMLElement).style.background='transparent'; }}
+            >
+              <Icon size={17} style={{ flexShrink:0 }}/>
+              {!collapsed && <span style={{ fontSize:13, fontWeight:isActive?600:400, whiteSpace:'nowrap' }}>{tab.label}</span>}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* User info */}
+      <div style={{ borderTop:'1px solid var(--sidebar-border)', padding:'12px 8px' }}>
+        {!collapsed ? (
+          <div style={{ borderRadius:8, background:'rgba(255,255,255,0.05)', overflow:'hidden' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px' }}>
+              <div style={{ width:32, height:32, borderRadius:'50%', background:'var(--antic-blue)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'white', flexShrink:0 }}>
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <p style={{ color:'white', fontSize:12, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.name}</p>
+                <p style={{ color:'rgba(255,255,255,0.4)', fontSize:10, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ROLE_LABELS[user.role]}</p>
+              </div>
+            </div>
+            <div style={{ display:'flex', borderTop:'1px solid rgba(255,255,255,0.06)' }}>
+              <button onClick={onEditProfile}
+                style={{ flex:1, background:'none', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.45)', padding:'7px 0', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center', gap:5, fontFamily:'Outfit,sans-serif', transition:'color 0.15s' }}
+                onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='white'}
+                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='rgba(255,255,255,0.45)'}
+                title="Modifier le profil">
+                <Edit2 size={12}/> Profil
+              </button>
+              <div style={{ width:1, background:'rgba(255,255,255,0.06)' }}/>
+              <button onClick={onLogout}
+                style={{ flex:1, background:'none', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.45)', padding:'7px 0', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center', gap:5, fontFamily:'Outfit,sans-serif', transition:'color 0.15s' }}
+                onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='#f87171'}
+                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='rgba(255,255,255,0.45)'}
+                title="Déconnexion">
+                <LogOut size={12}/> Quitter
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+            <button onClick={onEditProfile} title="Modifier le profil"
+              style={{ background:'none', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.35)', padding:'8px 0', display:'flex', justifyContent:'center', borderRadius:6 }}
+              onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='white'}
+              onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='rgba(255,255,255,0.35)'}>
+              <Edit2 size={15}/>
+            </button>
+            <button onClick={onLogout} title="Déconnexion"
+              style={{ background:'none', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.35)', padding:'8px 0', display:'flex', justifyContent:'center', borderRadius:6 }}
+              onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='#f87171'}
+              onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='rgba(255,255,255,0.35)'}>
+              <LogOut size={15}/>
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOPBAR
+// ─────────────────────────────────────────────────────────────────────────────
+const TAB_TITLES: Record<Tab, string> = {
+  dashboard:'Tableau de bord', dossiers:'Dossiers', stats:'Statistiques',
+  users:'Utilisateurs', antennes:'Antennes', organisation:'Organisation CIRT', categories:'Catégories',
+};
+const KpiCard: React.FC<{ label:string; value:number|string; icon:React.ElementType; color:string; bg:string; sub?:string; delay?:number }> = ({ label, value, icon:Icon, color, bg, sub, delay=0 }) => (
+  <div className={`anim-fadeup delay-${delay}`} style={{ background:'white', borderRadius:12, padding:'20px 22px', border:'1px solid #e8edf5', display:'flex', alignItems:'flex-start', gap:14, boxShadow:'0 1px 4px rgba(0,40,85,0.05)' }}>
+    <div style={{ width:44, height:44, borderRadius:10, background:bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+      <Icon size={20} color={color}/>
+    </div>
+    <div>
+      <p style={{ fontSize:11, color:'#5a6a7e', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:4 }}>{label}</p>
+      <p style={{ fontSize:26, fontWeight:800, color:'#0d1b2a', lineHeight:1 }}>{value}</p>
+      {sub && <p style={{ fontSize:11, color:'#94a3b8', marginTop:4 }}>{sub}</p>}
+    </div>
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VUE : TABLEAU DE BORD
+// ─────────────────────────────────────────────────────────────────────────────
+const DashboardView: React.FC<{ user:User; dossiers:Dossier[]; categories:Category[]; myPermissions:PermissionCategory[] }> = ({
+  user, dossiers, categories, myPermissions
+}) => {
+  const visibleCats = getVisibleCategories(user, categories, myPermissions);
+  const enCours  = dossiers.filter(d => d.status==='EN_COURS').length;
+  const valides  = dossiers.filter(d => d.status==='VALIDE').length;
+  const archives = dossiers.filter(d => d.status==='ARCHIVE').length;
+  const recent   = [...dossiers].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,6);
+  return (
+    <div style={{ padding:28, display:'flex', flexDirection:'column', gap:24 }}>
+      {/* Bannière */}
+      <div className="anim-fadeup" style={{ background:'linear-gradient(120deg,#003366,#0057a8)', borderRadius:14, padding:'24px 28px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', right:0, top:0, width:200, height:'100%', background:'rgba(77,184,255,0.08)', clipPath:'ellipse(100% 80% at 80% 50%)', pointerEvents:'none' }}/>
+        <div>
+          <p style={{ color:'rgba(255,255,255,0.6)', fontSize:12, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4 }}>Bienvenue</p>
+          <h2 style={{ fontFamily:'Syne,sans-serif', color:'white', fontWeight:800, fontSize:22, marginBottom:6 }}>{user.name}</h2>
+          <span style={{ display:'inline-flex', background:'rgba(255,255,255,0.12)', borderRadius:99, padding:'4px 12px', fontSize:11, fontWeight:600, color:'rgba(255,255,255,0.85)', border:'1px solid rgba(255,255,255,0.2)' }}>
+            {ROLE_LABELS[user.role]}
+            {user.antenne && ` · ${user.antenne.name}`}
+            {user.service && ` · ${user.service.name}`}
+          </span>
+        </div>
+        <div style={{ textAlign:'right' }}>
+          <p style={{ color:'rgba(255,255,255,0.5)', fontSize:11 }}>{new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>
+          <p style={{ color:'white', fontSize:28, fontWeight:800, marginTop:4 }}>{dossiers.length}</p>
+          <p style={{ color:'rgba(255,255,255,0.6)', fontSize:11 }}>dossier{dossiers.length>1?'s':''} visible{dossiers.length>1?'s':''}</p>
+        </div>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
+        <KpiCard label="Total" value={dossiers.length} icon={FileText} color="#0057a8" bg="#eff6ff" delay={1}/>
+        <KpiCard label="En cours" value={enCours} icon={Clock} color="#d97706" bg="#fffbeb" sub={`${dossiers.length?Math.round(enCours/dossiers.length*100):0}%`} delay={2}/>
+        <KpiCard label="Validés" value={valides} icon={CheckCircle} color="#16a34a" bg="#f0fdf4" delay={3}/>
+        <KpiCard label="Archivés" value={archives} icon={Archive} color="#2563eb" bg="#eff6ff" delay={4}/>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 300px', gap:16 }}>
+        {/* Activité récente */}
+        <div style={{ background:'white', borderRadius:12, border:'1px solid #e8edf5', overflow:'hidden' }}>
+          <div style={{ padding:'14px 20px', borderBottom:'1px solid #e8edf5', display:'flex', alignItems:'center', gap:8 }}>
+            <Activity size={14} color="#0057a8"/>
+            <span style={{ fontWeight:700, fontSize:14, color:'#003366' }}>Activité récente</span>
+          </div>
+          {recent.length===0 ? (
+            <div style={{ padding:40, textAlign:'center', color:'#94a3b8' }}>
+              <FileText size={32} style={{ margin:'0 auto 10px', opacity:0.25 }}/>
+              <p style={{ fontSize:13 }}>Aucun dossier</p>
+            </div>
+          ) : recent.map((d,i)=>{
+            const Icon = d.category?(CAT_ICONS[d.category.name]??FileText):FileText;
+            const color = d.category?CAT_COLORS[visibleCats.findIndex(c=>c.id===d.category!.id)%CAT_COLORS.length]:'#64748b';
+            return (
+              <div key={d.id} className={`anim-slidein delay-${Math.min(i+1,5)}`}
+                style={{ display:'flex', alignItems:'center', gap:14, padding:'11px 20px', borderBottom:i<recent.length-1?'1px solid #f1f5f9':'none', transition:'background 0.12s' }}
+                onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#f8fafd'}
+                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
+                <div style={{ width:34, height:34, borderRadius:8, background:`${color}15`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <Icon size={15} color={color}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p style={{ fontWeight:600, fontSize:13, color:'#0d1b2a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.title}</p>
+                  <p style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{d.category?.name??'—'} · {new Date(d.createdAt).toLocaleDateString('fr-FR')}</p>
+                </div>
+                <StatusBadge status={d.status}/>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Catégories accessibles */}
+        <div style={{ background:'white', borderRadius:12, border:'1px solid #e8edf5', overflow:'hidden' }}>
+          <div style={{ padding:'14px 20px', borderBottom:'1px solid #e8edf5', display:'flex', alignItems:'center', gap:8 }}>
+            <Tag size={14} color="#0057a8"/>
+            <span style={{ fontWeight:700, fontSize:14, color:'#003366' }}>Mes catégories</span>
+            <span style={{ marginLeft:'auto', fontSize:11, color:'#94a3b8', background:'#f1f5f9', borderRadius:99, padding:'2px 8px' }}>{visibleCats.length}</span>
+          </div>
+          <div style={{ padding:'8px 0' }}>
+            {visibleCats.map((cat,i)=>{
+              const count = dossiers.filter(d=>d.category?.id===cat.id).length;
+              const color = CAT_COLORS[i%CAT_COLORS.length];
+              const Icon  = CAT_ICONS[cat.name]??FileText;
+              return (
+                <div key={cat.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 18px' }}>
+                  <div style={{ width:28, height:28, borderRadius:6, background:`${color}15`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <Icon size={13} color={color}/>
+                  </div>
+                  <span style={{ flex:1, fontSize:12, fontWeight:600, color:'#0d1b2a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cat.name}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:color }}>{count}</span>
+                </div>
+              );
+            })}
+            {visibleCats.length===0 && (
+              <p style={{ fontSize:12, color:'#94a3b8', padding:'16px 18px', textAlign:'center' }}>Aucune catégorie assignée</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VUE : DOSSIERS
+// ─────────────────────────────────────────────────────────────────────────────
+const DossiersView: React.FC<{
+  user: User; dossiers: Dossier[];
+  categories: Category[]; myPermissions: PermissionCategory[];
+  onRefresh: () => void;
+}> = ({ user, dossiers, categories, myPermissions, onRefresh }) => {
+  const [search, setSearch]         = useState('');
+  const [filterStatus, setFS]       = useState<DossierStatus|'ALL'>('ALL');
+  const [filterCat, setFC]          = useState('ALL');
+  const [selected, setSelected]     = useState<Dossier|null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm]             = useState({ title:'', description:'', categoryId:'' });
+  const [urlsText, setUrlsText]     = useState('');   // pour les scans
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]           = useState('');
+
+  // Scans : URLs du dossier sélectionné + stats
+  const [scanUrls, setScanUrls]     = useState<api.ScanUrl[]>([]);
+  const [scanStats, setScanStats]   = useState<api.ScanStats|null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [addingUrls, setAddingUrls] = useState(false);
+  const [newUrls, setNewUrls]       = useState('');
+
+  const SCAN_CAT_NAME = 'Scans de Vulnérabilité';
+  const isScanCat = (catId: string | number) =>
+    categories.find(c => String(c.id) === String(catId))?.name === SCAN_CAT_NAME;
+
+  // ⚠️ FILTRAGE : les agents ne voient que leurs catégories autorisées
+  const visibleCats = getVisibleCategories(user, categories, myPermissions);
+  const allowedCatIds = new Set(visibleCats.map(c => c.id));
+
+  const filtered = dossiers.filter(d => {
+    const matchSearch = d.title.toLowerCase().includes(search.toLowerCase()) || (d.category?.name??'').toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus==='ALL' || d.status===filterStatus;
+    const matchCat    = filterCat==='ALL' || String(d.category?.id)===filterCat;
+    return matchSearch && matchStatus && matchCat;
+  });
+
+  const counts = {
+    ALL:     dossiers.length,
+    EN_COURS:dossiers.filter(d=>d.status==='EN_COURS').length,
+    VALIDE:  dossiers.filter(d=>d.status==='VALIDE').length,
+    ARCHIVE: dossiers.filter(d=>d.status==='ARCHIVE').length,
+  };
+
+  const act = async (fn: () => Promise<any>) => {
+    try { await fn(); onRefresh(); setSelected(null); }
+    catch (e: any) { alert(e.message); }
+  };
+
+  // Charger les URLs quand on ouvre un dossier de scan
+  const openDossier = async (d: Dossier) => {
+    setSelected(d);
+    if (d.category?.name === SCAN_CAT_NAME) {
+      setScanLoading(true);
+      try {
+        const [urls, stats] = await Promise.all([
+          api.getScanUrls(d.id),
+          api.getScanStats(d.id),
+        ]);
+        setScanUrls(urls); setScanStats(stats);
+      } catch {} finally { setScanLoading(false); }
     }
   };
 
+  const handleAddUrls = async () => {
+    if (!selected || !newUrls.trim()) return;
+    try {
+      await api.addScanUrls(selected.id, newUrls);
+      const [urls, stats] = await Promise.all([api.getScanUrls(selected.id), api.getScanStats(selected.id)]);
+      setScanUrls(urls); setScanStats(stats);
+      setNewUrls(''); setAddingUrls(false);
+    } catch (e: any) { alert(e.message); }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault(); setSubmitting(true); setError('');
+    try {
+      const dossier = await api.createDossier({ title:form.title, description:form.description, categoryId:Number(form.categoryId) });
+      // Si catégorie scans et URLs fournies, les soumettre immédiatement
+      if (isScanCat(form.categoryId) && urlsText.trim()) {
+        await api.addScanUrls(dossier.id, urlsText);
+      }
+      setShowCreate(false); setForm({ title:'', description:'', categoryId:'' }); setUrlsText(''); onRefresh();
+    } catch(e:any) { setError(e.message); }
+    finally { setSubmitting(false); }
+  };
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-2xl bg-white rounded-[40px] shadow-2xl overflow-hidden">
-        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Nouveau Dossier</h3>
-          <button onClick={onClose} className="p-3 hover:bg-slate-200 rounded-full transition-colors"><X size={24} className="text-slate-500" /></button>
+    <div style={{ padding:28, display:'flex', flexDirection:'column', gap:18 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div>
+          <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'#003366' }}>Dossiers</h2>
+          <p style={{ fontSize:12, color:'#5a6a7e', marginTop:2 }}>{filtered.length} / {dossiers.length}</p>
         </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Titre du dossier</label>
-            <input type="text" required placeholder="Ex: Scan vulnérabilité Réseau X" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue transition-all" value={title} onChange={(e) => setTitle(e.target.value)} />
+        {canCreateDossiers(user.role) && visibleCats.length>0 && (
+          <Btn onClick={()=>setShowCreate(true)}><Plus size={14}/> Nouveau dossier</Btn>
+        )}
+        {canCreateDossiers(user.role) && visibleCats.length===0 && (
+          <div style={{ padding:'8px 14px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, fontSize:12, color:'#92400e' }}>
+            ⚠ Aucune catégorie assignée — contactez votre directeur
           </div>
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Catégorie</label>
-              <div className="px-5 py-3.5 bg-slate-100 border border-slate-200 rounded-2xl text-sm text-slate-500 font-black uppercase tracking-tight">{STATIC_CATEGORIES.find(c => c.id === categoryId)?.label}</div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Antenne</label>
-              <select 
-                disabled={!!user.antenneId}
-                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue transition-all" 
-                value={antenneId} 
-                onChange={(e) => setAntenneId(e.target.value)}
-              >
-                {STATIC_ANTENNES.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
+        )}
+      </div>
+
+      {/* Filtres statut */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+        {(['ALL','EN_COURS','VALIDE','ARCHIVE'] as const).map(s=>(
+          <button key={s} onClick={()=>setFS(s as any)}
+            style={{ padding:'5px 13px', borderRadius:99, fontSize:12, fontWeight:600, border:filterStatus===s?'1.5px solid #0057a8':'1.5px solid #e8edf5', background:filterStatus===s?'#0057a8':'white', color:filterStatus===s?'white':'#5a6a7e', cursor:'pointer', transition:'all 0.15s' }}>
+            {s==='ALL'?'Tous':STATUS_CFG[s as DossierStatus].label}
+            <span style={{ marginLeft:6, background:filterStatus===s?'rgba(255,255,255,0.2)':'#f1f5f9', borderRadius:99, padding:'1px 6px', fontSize:10 }}>
+              {counts[s]}
+            </span>
+          </button>
+        ))}
+        <div style={{ flex:1 }}/>
+        <div style={{ position:'relative' }}>
+          <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher…"
+            style={{ ...inputS, paddingLeft:32, width:200, height:34 }} {...focusHandlers}/>
+        </div>
+        {/* Filtre catégorie : uniquement les catégories visibles */}
+        <Sel value={filterCat} onChange={e=>setFC(e.target.value)} style={{ width:190, height:34, padding:'0 10px', fontSize:12 }}>
+          <option value="ALL">Toutes catégories</option>
+          {visibleCats.map(c=><option key={c.id} value={String(c.id)}>{c.name}</option>)}
+        </Sel>
+      </div>
+
+      {/* Table */}
+      <div style={{ background:'white', borderRadius:12, border:'1px solid #e8edf5', overflow:'hidden' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 160px 160px 110px 80px', padding:'10px 16px', background:'#f8fafd', borderBottom:'1px solid #e8edf5', fontSize:10, fontWeight:700, color:'#5a6a7e', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+          <span>Titre</span><span>Catégorie</span><span>Antenne</span><span>Statut</span><span>Date</span>
+        </div>
+        {filtered.length===0 ? (
+          <div style={{ padding:48, textAlign:'center', color:'#94a3b8' }}>
+            <FileText size={32} style={{ margin:'0 auto 10px', opacity:0.25 }}/>
+            <p style={{ fontSize:13, fontWeight:600 }}>Aucun dossier trouvé</p>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Description / Analyse</label>
-            <textarea required rows={4} placeholder="Détails du dossier..." className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue transition-all resize-none" value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fichiers joints</label>
-            <div className="mt-1 flex justify-center px-6 pt-10 pb-10 border-4 border-slate-200 border-dashed rounded-[32px] hover:border-antic-blue transition-colors bg-slate-50/50">
-              <div className="space-y-2 text-center">
-                <Upload className="mx-auto h-12 w-12 text-slate-300" />
-                <div className="flex text-sm text-slate-600 font-black uppercase tracking-tight">
-                  <label className="relative cursor-pointer bg-white rounded-lg px-2 text-antic-blue hover:text-blue-700"><span>Téléverser</span><input type="file" multiple className="sr-only" onChange={(e) => e.target.files && setFiles(Array.from(e.target.files))} /></label>
-                  <p className="pl-1">ou glisser-déposer</p>
+        ) : filtered.map((d,i)=>{
+          const Icon = d.category?(CAT_ICONS[d.category.name]??FileText):FileText;
+          const idx  = visibleCats.findIndex(c=>c.id===d.category?.id);
+          const color = idx>=0 ? CAT_COLORS[idx%CAT_COLORS.length] : '#64748b';
+          return (
+            <div key={d.id} onClick={()=>openDossier(d)}
+              style={{ display:'grid', gridTemplateColumns:'1fr 160px 160px 110px 80px', padding:'11px 16px', borderBottom:i<filtered.length-1?'1px solid #f1f5f9':'none', cursor:'pointer', transition:'background 0.12s', alignItems:'center' }}
+              onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#f8fafd'}
+              onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+                <div style={{ width:32, height:32, borderRadius:8, background:`${color}15`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <Icon size={14} color={color}/>
                 </div>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">PDF, PNG, JPG (Max 10MB)</p>
+                <span style={{ fontWeight:600, fontSize:13, color:'#0d1b2a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.title}</span>
               </div>
+              <span style={{ fontSize:12, color:'#5a6a7e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.category?.name??'—'}</span>
+              <span style={{ fontSize:12, color:'#5a6a7e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.antenne?.name??'—'}</span>
+              <StatusBadge status={d.status}/>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>{new Date(d.createdAt).toLocaleDateString('fr-FR')}</span>
             </div>
-          </div>
-          <div className="pt-4 flex justify-end gap-4">
-            <button type="button" onClick={onClose} className="px-6 py-3 text-sm font-black text-slate-500 hover:bg-slate-100 rounded-2xl transition-all uppercase tracking-widest">Annuler</button>
-            <button type="submit" disabled={submitting} className="bg-antic-blue text-white px-10 py-3 rounded-2xl text-sm font-black shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 uppercase tracking-widest disabled:opacity-60 flex items-center gap-2">
-              {submitting && <Loader size={14} className="animate-spin" />}
-              Soumettre
-            </button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
-  );
-};
+          );
+        })}
+      </div>
 
-const ROLE_IDS: Record<string, number> = {
-  super_admin: 1,
-  admin_cirt: 2,
-  directeur_antenne: 3,
-  agent: 4,
-};
+      {/* Modal création */}
+      {showCreate && (
+        <Modal title="Nouveau dossier" onClose={()=>setShowCreate(false)}>
+          <form onSubmit={handleCreate} style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            {error && <ErrBox msg={error}/>}
+            <Field label="Titre" required><Inp value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Intitulé du dossier" required/></Field>
+            <Field label="Catégorie" required hint="Seules vos catégories autorisées sont proposées.">
+              <Sel value={form.categoryId} onChange={e=>setForm(f=>({...f,categoryId:e.target.value}))} required>
+                <option value="">— Sélectionner —</option>
+                {/* ⚠️ Uniquement les catégories auxquelles l'agent a accès */}
+                {visibleCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </Sel>
+            </Field>
+            <Field label="Description"><Txa value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Contexte et détails…"/></Field>
+            {/* Champ spécial scans de vulnérabilité */}
+            {isScanCat(form.categoryId) && (
+              <Field label="URLs à analyser" hint="Une URL par ligne. Chaque URL est enregistrée individuellement selon le CDC §15.">
+                <Txa
+                  value={urlsText}
+                  onChange={e=>setUrlsText(e.target.value)}
+                  placeholder={"https://exemple.gouv.cm\nhttps://portail.antic.cm\nhttps://..."}
+                  rows={6}
+                  style={{ fontFamily:'monospace', fontSize:12 }}
+                />
+                {urlsText.trim() && (
+                  <p style={{ fontSize:11, color:'#0070cc', marginTop:4 }}>
+                    {urlsText.split('\n').filter(l=>l.trim()).length} URL(s) détectée(s)
+                  </p>
+                )}
+              </Field>
+            )}
+            <div style={{ display:'flex', gap:10, paddingTop:4 }}>
+              <Btn variant="ghost" onClick={()=>setShowCreate(false)}>Annuler</Btn>
+              <Btn type="submit" disabled={submitting}>{submitting?'Création…':'Créer le dossier'}</Btn>
+            </div>
+          </form>
+        </Modal>
+      )}
 
-const CreateUserModal: React.FC<{ 
-  currentUser: User; 
-  onClose: () => void; 
-  onCreate: (u: Omit<User, 'id'> & { password: string; roleId: number; antenneId?: number }) => void 
-}> = ({ currentUser, onClose, onCreate }) => {
-  const [username, setUsername] = useState('');
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('ANTENNE_SIMPLE');
-  const [antenneId, setAntenneId] = useState('');
-  const [allowedCategories, setAllowedCategories] = useState<CategoryId[]>([]);
-
-  const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
-  const isCirtAdmin = currentUser.role === 'CIRT_ADMIN';
-  const isAntenneDirector = currentUser.role === 'ANTENNE_DIRECTOR';
-
-  const availableRoles: UserRole[] = [];
-  if (isSuperAdmin || isCirtAdmin) {
-    availableRoles.push('CIRT_ADMIN', 'CIRT_SECONDARY', 'ANTENNE_DIRECTOR', 'ANTENNE_SIMPLE');
-  } else if (isAntenneDirector) {
-    availableRoles.push('ANTENNE_SIMPLE');
-  }
-
-  const roleNameMap: Record<UserRole, string> = {
-    SUPER_ADMIN: 'super_admin',
-    CIRT_ADMIN: 'admin_cirt',
-    CIRT_SECONDARY: 'admin_cirt',
-    ANTENNE_DIRECTOR: 'directeur_antenne',
-    ANTENNE_SIMPLE: 'agent',
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const backendRoleName = roleNameMap[role];
-    const resolvedAntenneId = (role === 'ANTENNE_DIRECTOR' || role === 'ANTENNE_SIMPLE')
-      ? (isAntenneDirector ? (currentUser.antenneId ? Number(currentUser.antenneId) : undefined) : (antenneId ? Number(antenneId) : undefined))
-      : undefined;
-
-    onCreate({
-      username,
-      name,
-      password,
-      role,
-      roleId: ROLE_IDS[backendRoleName] ?? 4,
-      affiliation: (role === 'CIRT_ADMIN' || role === 'CIRT_SECONDARY') ? 'CIRT' : 'ANTENNE',
-      antenneId: resolvedAntenneId,
-      allowedCategories: role === 'CIRT_SECONDARY' ? allowedCategories : undefined,
-      createdBy: currentUser.id,
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8">
-        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-6">Nouvel Utilisateur</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Nom Complet</label>
-            <input 
-              type="text" 
-              required
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
-              placeholder="ex: Jean Dupont"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Adresse e-mail (identifiant)</label>
-            <input 
-              type="email" 
-              required
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
-              placeholder="ex: jean.dupont@antic.cm"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Mot de passe initial</label>
-            <input 
-              type="password"
-              required
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
-              placeholder="••••••••"
-              minLength={8}
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Rôle</label>
-            <select 
-              value={role}
-              onChange={e => setRole(e.target.value as UserRole)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
-            >
-              {availableRoles.map(r => (
-                <option key={r} value={r}>{r.replace('_', ' ')}</option>
+      {/* Modal détail */}
+      {selected && (
+        <Modal title={selected.title} subtitle={`#${selected.id} · ${selected.category?.name??''}`} onClose={()=>{ setSelected(null); setScanUrls([]); setScanStats(null); }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <StatusBadge status={selected.status}/>
+              {selected.category && <span style={{ fontSize:11, background:'#f1f5f9', color:'#5a6a7e', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{selected.category.name}</span>}
+            </div>
+            {selected.description && <p style={{ fontSize:13, color:'#5a6a7e', background:'#f8fafd', padding:'12px 14px', borderRadius:8, lineHeight:1.6 }}>{selected.description}</p>}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              {[['Antenne',selected.antenne?.name],['Créé par',selected.createdBy?.name],['Date',new Date(selected.createdAt).toLocaleDateString('fr-FR')],['Validé le',selected.validatedAt?new Date(selected.validatedAt).toLocaleDateString('fr-FR'):null],['Service',selected.service?.name]].filter(([,v])=>v).map(([l,v])=>(
+                <div key={String(l)} style={{ background:'#f8fafd', borderRadius:8, padding:'10px 12px' }}>
+                  <p style={{ fontSize:10, color:'#94a3b8', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:4 }}>{l}</p>
+                  <p style={{ fontSize:13, fontWeight:600, color:'#0d1b2a' }}>{v}</p>
+                </div>
               ))}
-            </select>
-          </div>
-
-          {(role === 'ANTENNE_DIRECTOR' || role === 'ANTENNE_SIMPLE') && !isAntenneDirector && (
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Antenne</label>
-              <select 
-                required
-                value={antenneId}
-                onChange={e => setAntenneId(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue"
-              >
-                <option value="">Sélectionner une antenne</option>
-                {STATIC_ANTENNES.map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
             </div>
-          )}
 
-          {role === 'CIRT_SECONDARY' && (
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Catégories Autorisées</label>
-              <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200">
-                {STATIC_CATEGORIES.filter(c => c.id !== 'accueil').map(cat => (
-                  <label key={cat.id} className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer hover:text-antic-blue">
-                    <input 
-                      type="checkbox"
-                      checked={allowedCategories.includes(cat.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) setAllowedCategories([...allowedCategories, cat.id]);
-                        else setAllowedCategories(allowedCategories.filter(id => id !== cat.id));
-                      }}
-                      className="rounded border-slate-300 text-antic-blue focus:ring-antic-blue"
-                    />
-                    {cat.label}
-                  </label>
+            {/* ── PANEL SCANS DE VULNÉRABILITÉ ── */}
+            {selected.category?.name === SCAN_CAT_NAME && (
+              <div style={{ borderTop:'1px solid #e8f0f8', paddingTop:14, display:'flex', flexDirection:'column', gap:12 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <p style={{ fontSize:13, fontWeight:700, color:'#003366' }}>URLs à analyser</p>
+                  <Btn onClick={()=>setAddingUrls(v=>!v)} variant="secondary" style={{ fontSize:11, padding:'4px 10px' }}>
+                    {addingUrls ? 'Annuler' : '+ Ajouter des URLs'}
+                  </Btn>
+                </div>
+
+                {/* Stats rapides */}
+                {scanStats && (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+                    {[
+                      { label:'Total', val:scanStats.total, color:'#0057a8' },
+                      { label:'En attente', val:scanStats.enAttente, color:'#d97706' },
+                      { label:'Analysées', val:scanStats.analysees, color:'#059669' },
+                    ].map(s=>(
+                      <div key={s.label} style={{ background:'#f8fafd', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
+                        <p style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.val}</p>
+                        <p style={{ fontSize:10, color:'#94a3b8', fontWeight:600 }}>{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Ajout URLs */}
+                {addingUrls && (
+                  <div style={{ background:'#f8fafd', borderRadius:8, padding:12 }}>
+                    <p style={{ fontSize:11, color:'#5a6a7e', marginBottom:6 }}>Une URL par ligne</p>
+                    <Txa value={newUrls} onChange={e=>setNewUrls(e.target.value)}
+                      placeholder={"https://exemple.gouv.cm\nhttps://portail.antic.cm"}
+                      rows={4} style={{ fontFamily:'monospace', fontSize:12, marginBottom:8 }}/>
+                    <Btn onClick={handleAddUrls} disabled={!newUrls.trim()}>Soumettre les URLs</Btn>
+                  </div>
+                )}
+
+                {/* Liste URLs */}
+                {scanLoading ? (
+                  <p style={{ fontSize:12, color:'#94a3b8' }}>Chargement…</p>
+                ) : scanUrls.length > 0 ? (
+                  <div style={{ maxHeight:200, overflowY:'auto', display:'flex', flexDirection:'column', gap:4 }}>
+                    {scanUrls.map(u=>(
+                      <div key={u.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+                        background:'#f8fafd', borderRadius:6, padding:'6px 10px' }}>
+                        <span style={{ fontSize:11, fontFamily:'monospace', color:'#003366',
+                          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'70%' }}>{u.url}</span>
+                        <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99,
+                          background: u.status==='ANALYSEE'?'#d1fae5':u.status==='ECHOUEE'?'#fee2e2':'#fef3c7',
+                          color: u.status==='ANALYSEE'?'#065f46':u.status==='ECHOUEE'?'#991b1b':'#92400e',
+                          flexShrink:0 }}>
+                          {u.status==='ANALYSEE'?'Analysée':u.status==='ECHOUEE'?'Échouée':'En attente'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize:12, color:'#94a3b8', fontStyle:'italic' }}>Aucune URL soumise pour ce dossier.</p>
+                )}
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', paddingTop:4, borderTop:'1px solid #f1f5f9' }}>
+              {canValidate(user.role) && selected.status==='EN_COURS' && <Btn onClick={()=>act(()=>api.validateDossier(selected.id))}><Check size={13}/> Valider</Btn>}
+              {canArchive(user.role) && selected.status==='VALIDE' && <Btn variant="secondary" onClick={()=>act(()=>api.archiveDossier(selected.id))}><Archive size={13}/> Archiver</Btn>}
+              {(user.role==='super_admin'||(user.role==='agent_antenne'&&selected.status==='EN_COURS')) && (
+                <Btn variant="danger" onClick={()=>{if(confirm('Supprimer ce dossier ?'))act(()=>api.deleteDossier(selected.id));}}>
+                  <Trash2 size={13}/> Supprimer
+                </Btn>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VUE : STATISTIQUES
+// ─────────────────────────────────────────────────────────────────────────────
+const StatsView: React.FC<{ user: User }> = ({ user }) => {
+  const [global, setGlobal]   = useState<StatGlobale[]>([]);
+  const [antenne, setAntenne] = useState<StatAntenne[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [annee, setAnnee]     = useState('');
+  const [mois, setMois]       = useState('');
+
+  const load = useCallback(async ()=>{
+    setLoading(true);
+    try {
+      const [g,a] = await Promise.all([
+        api.getGlobalStats(annee||undefined, mois||undefined),
+        api.getStatsByAntenne(undefined, annee||undefined, mois||undefined),
+      ]);
+      setGlobal(g); setAntenne(a);
+    } catch{} finally { setLoading(false); }
+  },[annee,mois]);
+
+  useEffect(()=>{load();},[load]);
+  const total=global.reduce((s,c)=>s+c.total,0), enCours=global.reduce((s,c)=>s+c.enCours,0), valides=global.reduce((s,c)=>s+c.valides,0);
+
+  return (
+    <div style={{ padding:28, display:'flex', flexDirection:'column', gap:20 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div>
+          <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'#003366' }}>Statistiques</h2>
+          <p style={{ fontSize:12, color:'#5a6a7e', marginTop:2 }}>Indicateurs analytiques de la plateforme</p>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <Sel value={annee} onChange={e=>setAnnee(e.target.value)} style={{ width:130, height:34, padding:'0 10px', fontSize:12 }}>
+            <option value="">Toutes années</option>
+            {[2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
+          </Sel>
+          <Sel value={mois} onChange={e=>setMois(e.target.value)} style={{ width:130, height:34, padding:'0 10px', fontSize:12 }}>
+            <option value="">Tous mois</option>
+            {['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+          </Sel>
+        </div>
+      </div>
+      {loading?<div style={{display:'flex',justifyContent:'center',padding:64}}><Loader2 size={32} color="#0057a8" style={{animation:'spin 1s linear infinite'}}/></div>:(
+        <>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
+            <KpiCard label="Total" value={total} icon={FileText} color="#0057a8" bg="#eff6ff" delay={1}/>
+            <KpiCard label="En cours" value={enCours} icon={Clock} color="#d97706" bg="#fffbeb" delay={2}/>
+            <KpiCard label="Validés" value={valides} icon={CheckCircle} color="#16a34a" bg="#f0fdf4" delay={3}/>
+            <KpiCard label="Archivés" value={global.reduce((s,c)=>s+c.archives,0)} icon={Archive} color="#2563eb" bg="#eff6ff" delay={4}/>
+          </div>
+          <div style={{ background:'white', borderRadius:12, border:'1px solid #e8edf5', overflow:'hidden' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #e8edf5' }}>
+              <span style={{ fontWeight:700, fontSize:14, color:'#003366' }}>Par catégorie</span>
+            </div>
+            <div style={{ padding:16, display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:12 }}>
+              {global.map((s,i)=>{
+                const Icon=CAT_ICONS[s.categoryName]??FileText; const color=CAT_COLORS[i%CAT_COLORS.length]; const pct=s.total>0?Math.round(s.valides/s.total*100):0;
+                return (
+                  <div key={s.categoryId} style={{ background:'#f8fafd', borderRadius:10, padding:'14px 16px', border:'1px solid #e8edf5' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                      <div style={{ width:34, height:34, borderRadius:8, background:`${color}15`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Icon size={15} color={color}/></div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontWeight:700, fontSize:12, color:'#0d1b2a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.categoryName}</p>
+                        <p style={{ fontSize:10, color:'#94a3b8' }}>{s.total} dossiers · {pct}% validés</p>
+                      </div>
+                      <span style={{ fontWeight:800, fontSize:18, color }}>{s.total}</span>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
+                      {[{l:'En cours',v:s.enCours,c:'#f97316'},{l:'Validés',v:s.valides,c:'#22c55e'},{l:'Archivés',v:s.archives,c:'#3b82f6'}].map(item=>(
+                        <div key={item.l} style={{ textAlign:'center', background:'white', borderRadius:6, padding:'6px 4px', border:'1px solid #e8edf5' }}>
+                          <p style={{ fontWeight:800, fontSize:15, color:item.c }}>{item.v}</p>
+                          <p style={{ fontSize:9, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.05em' }}>{item.l}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {antenne.length>0&&(
+            <div style={{ background:'white', borderRadius:12, border:'1px solid #e8edf5', overflow:'hidden' }}>
+              <div style={{ padding:'14px 20px', borderBottom:'1px solid #e8edf5' }}><span style={{ fontWeight:700, fontSize:14, color:'#003366' }}>Par antenne</span></div>
+              <div style={{ padding:16, display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
+                {antenne.map(a=>(
+                  <div key={a.antenneId} style={{ background:'#f8fafd', borderRadius:10, padding:'14px 16px', border:'1px solid #e8edf5' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                      <MapPin size={13} color="#0057a8"/>
+                      <span style={{ fontWeight:700, fontSize:12, color:'#003366' }}>{a.antenneName}</span>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:4, fontSize:11 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#5a6a7e' }}>Total</span><strong style={{ color:'#0d1b2a' }}>{a.total}</strong></div>
+                      <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#f97316' }}>En cours</span><strong>{a.enCours}</strong></div>
+                      <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#22c55e' }}>Validés</span><strong>{a.valides}</strong></div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
           )}
-
-          <div className="pt-4 flex gap-3">
-            <button 
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-6 py-3 border border-slate-200 rounded-2xl text-xs font-black text-slate-400 hover:bg-slate-50 transition-all"
-            >
-              ANNULER
-            </button>
-            <button 
-              type="submit"
-              className="flex-1 px-6 py-3 bg-antic-blue text-white rounded-2xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all"
-            >
-              CRÉER
-            </button>
-          </div>
-        </form>
-      </motion.div>
+        </>
+      )}
     </div>
   );
 };
 
-const CreateAntenneModal: React.FC<{ onClose: () => void; onCreate: (a: Omit<Antenne, 'id'>) => void }> = ({ onClose, onCreate }) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// VUE : UTILISATEURS  (avec bouton "Catégories" par utilisateur)
+// ─────────────────────────────────────────────────────────────────────────────
+const UsersView: React.FC<{
+  user: User; users: User[]; antennes: Antenne[]; services: ServiceCirt[];
+  categories: Category[]; onRefresh: () => void;
+}> = ({ user, users, antennes, services, categories, onRefresh }) => {
+  const [showCreate, setShowCreate]   = useState(false);
+  const [catTarget, setCatTarget]     = useState<User|null>(null); // utilisateur dont on édite les catégories
+  const [form, setForm] = useState({ name:'', email:'', password:'', roleName:'', antenneId:'', serviceId:'' });
+  const [submitting, setSubmitting]   = useState(false);
+  const [error, setError]             = useState('');
+  const [search, setSearch]           = useState('');
+
+  const creatableRoles = (CREATABLE_ROLES[user.role] ?? []) as UserRole[];
+
+  // Rôles pour lesquels on peut éditer les catégories (agents)
+  const canEditCatOf = (target: User) => {
+    // super_admin / admin_cirt : peuvent gérer les catégories de agent_cirt et agent_antenne
+    if ((user.role === 'super_admin' || user.role === 'admin_cirt') &&
+        ['agent_cirt', 'agent_antenne'].includes(target.role?.name)) return true;
+    // directeur_antenne : peut gérer les catégories de ses agent_antenne
+    if (user.role === 'directeur_antenne' && target.role?.name === 'agent_antenne' &&
+        user.antenne?.id === target.antenne?.id) return true;
+    /*console.log(user.role.toString());
+    console.log(target.role?.name.toString());*/
+    return false;
+  };
+
+  const needsAntenne = ['directeur_antenne','agent_antenne'].includes(form.roleName);
+  const needsService = ['chef_service','agent_cirt'].includes(form.roleName);
+
+  // directeur_antenne : son antenne est forcée, pas de sélection
+  const isDirecteur = user.role==='directeur_antenne';
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault(); setSubmitting(true); setError('');
+    try {
+      await api.createUser({
+        name:form.name, email:form.email, password:form.password, roleName:form.roleName,
+        antenneId: needsAntenne ? (isDirecteur ? user.antenne?.id : Number(form.antenneId)) : undefined,
+        serviceId: needsService ? Number(form.serviceId) : undefined,
+      });
+      setShowCreate(false); setForm({ name:'', email:'', password:'', roleName:'', antenneId:'', serviceId:'' }); onRefresh();
+    } catch(e:any) { setError(e.message); }
+    finally { setSubmitting(false); }
+  };
+
+  const filteredUsers = users.filter(u =>
+    u.name.toLowerCase().includes(search.toLowerCase()) ||
+    u.email.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div style={{ padding:28, display:'flex', flexDirection:'column', gap:18 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div>
+          <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'#003366' }}>Utilisateurs</h2>
+          <p style={{ fontSize:12, color:'#5a6a7e', marginTop:2 }}>{users.length} compte{users.length>1?'s':''}</p>
+        </div>
+        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          <div style={{ position:'relative' }}>
+            <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }}/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher…"
+              style={{ ...inputS, paddingLeft:32, width:200, height:34 }} {...focusHandlers}/>
+          </div>
+          {creatableRoles.length>0 && (
+            <Btn onClick={()=>setShowCreate(true)}><UserPlus size={14}/> Créer un compte</Btn>
+          )}
+        </div>
+      </div>
+
+      <div style={{ background:'white', borderRadius:12, border:'1px solid #e8edf5', overflow:'hidden' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 180px 160px 1fr 100px', padding:'10px 20px', background:'#f8fafd', borderBottom:'1px solid #e8edf5', fontSize:10, fontWeight:700, color:'#5a6a7e', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+          <span>Nom</span><span>Rôle</span><span>Affectation</span><span>Email</span><span style={{ textAlign:'right' }}>Actions</span>
+        </div>
+        {filteredUsers.length===0 && (
+          <div style={{ padding:40, textAlign:'center', color:'#94a3b8' }}>
+            <Users size={32} style={{ margin:'0 auto 10px', opacity:0.25 }}/>
+            <p style={{ fontSize:13 }}>Aucun utilisateur</p>
+          </div>
+        )}
+        {filteredUsers.map((u,i)=>(
+          <div key={u.id} style={{ display:'grid', gridTemplateColumns:'1fr 180px 160px 1fr 100px', padding:'11px 20px', borderBottom:i<filteredUsers.length-1?'1px solid #f1f5f9':'none', alignItems:'center' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:32, height:32, borderRadius:'50%', background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'#0057a8', flexShrink:0 }}>
+                {u.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <span style={{ fontWeight:600, fontSize:13, color:'#0d1b2a' }}>{u.name}</span>
+                {u.id===user.id && <span style={{ marginLeft:8, fontSize:10, background:'#eff6ff', color:'#0057a8', padding:'1px 6px', borderRadius:99, fontWeight:700 }}>Vous</span>}
+              </div>
+            </div>
+            <span><RoleBadge role={u.role}/></span>
+            <span style={{ fontSize:12, color:'#5a6a7e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {u.antenne?.name ?? u.service?.name ?? '—'}
+            </span>
+            <span style={{ fontSize:11, color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.email}</span>
+            <div style={{ display:'flex', gap:4, justifyContent:'flex-end' }}>
+              {/* Bouton éditer catégories */}
+              {canEditCatOf(u) && (
+                <button onClick={()=>setCatTarget(u)} title="Gérer les catégories autorisées"
+                  style={{ background:'#eff6ff', border:'none', borderRadius:6, padding:'5px 8px', cursor:'pointer', color:'#0057a8', display:'flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600 }}
+                  onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#dbeafe'}
+                  onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='#eff6ff'}>
+                  <Tag size={12}/> Catégories
+                </button>
+              )}
+              {u.id!==user.id && (
+                <button onClick={()=>{if(confirm(`Supprimer ${u.name} ?`)) api.deleteUser(u.id).then(onRefresh).catch(e=>alert(e.message));}} title="Supprimer"
+                  style={{ background:'none', border:'none', cursor:'pointer', color:'#fca5a5', borderRadius:6, padding:'5px 7px', display:'flex' }}
+                  onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='#dc2626'}
+                  onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='#fca5a5'}>
+                  <Trash2 size={14}/>
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Modal création */}
+      {showCreate && (
+        <Modal title="Créer un utilisateur" onClose={()=>setShowCreate(false)}>
+          <form onSubmit={handleCreate} style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            {error && <ErrBox msg={error}/>}
+            <Field label="Nom complet" required><Inp value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} required placeholder="Prénom NOM"/></Field>
+            <Field label="E-mail" required><Inp type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} required placeholder="email@antic.cm"/></Field>
+            <Field label="Mot de passe provisoire" required><Inp type="password" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} required placeholder="••••••••"/></Field>
+            <Field label="Rôle" required>
+              <Sel value={form.roleName} onChange={e=>setForm(f=>({...f,roleName:e.target.value,antenneId:'',serviceId:''}))} required>
+                <option value="">— Sélectionner —</option>
+                {creatableRoles.map(r=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              </Sel>
+            </Field>
+            {/* Antenne : si directeur_antenne, afficher l'antenne forcée (readonly) */}
+            {needsAntenne && isDirecteur && (
+              <Field label="Antenne" hint="L'agent sera automatiquement rattaché à votre antenne.">
+                <div style={{ ...inputS, background:'#f1f5f9', color:'#5a6a7e', cursor:'not-allowed', display:'flex', alignItems:'center', gap:8 }}>
+                  <MapPin size={13}/> {user.antenne?.name ?? 'Votre antenne'}
+                </div>
+              </Field>
+            )}
+            {/* Antenne : si admin_cirt crée un directeur_antenne, choisir l'antenne */}
+            {needsAntenne && !isDirecteur && (
+              <Field label="Antenne" required>
+                <Sel value={form.antenneId} onChange={e=>setForm(f=>({...f,antenneId:e.target.value}))} required>
+                  <option value="">— Sélectionner —</option>
+                  {antennes.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                </Sel>
+              </Field>
+            )}
+            {needsService && (
+              <Field label="Service CIRT" required>
+                <Sel value={form.serviceId} onChange={e=>setForm(f=>({...f,serviceId:e.target.value}))} required>
+                  <option value="">— Sélectionner —</option>
+                  {services.map(s=><option key={s.id} value={s.id}>{s.name}{s.sousDirection?` (${s.sousDirection.name})`:''}</option>)}
+                </Sel>
+              </Field>
+            )}
+            {/* Note : les catégories se gèrent APRÈS la création via le bouton "Catégories" */}
+            {(['agent_cirt','agent_antenne'].includes(form.roleName)) && (
+              <div style={{ padding:'10px 14px', background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:8, fontSize:12, color:'#0369a1' }}>
+                <strong>💡 Astuce :</strong> Après la création, utilisez le bouton <Tag size={11} style={{ display:'inline', verticalAlign:'middle' }}/> <strong>Catégories</strong> pour assigner les accès de cet agent.
+              </div>
+            )}
+            <div style={{ display:'flex', gap:10, paddingTop:4 }}>
+              <Btn variant="ghost" onClick={()=>setShowCreate(false)}>Annuler</Btn>
+              <Btn type="submit" disabled={submitting}>{submitting?'Création…':'Créer le compte'}</Btn>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Modal catégories */}
+      {catTarget && (
+        <ModalCategories targetUser={catTarget} allCategories={categories} onClose={()=>setCatTarget(null)} onSaved={onRefresh}/>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VUE : ANTENNES
+// ─────────────────────────────────────────────────────────────────────────────
+const AntennesView: React.FC<{ user:User; antennes:Antenne[]; onRefresh:()=>void }> = ({ user, antennes, onRefresh }) => {
+  const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8">
-        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-6">Nouvelle Antenne</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Nom de l'Antenne</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue" placeholder="ex: Antenne Nord" />
-          </div>
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Localisation (Ville)</label>
-            <input type="text" value={location} onChange={e => setLocation(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue" placeholder="ex: Garoua" />
-          </div>
-          <div className="pt-4 flex gap-3">
-            <button onClick={onClose} className="flex-1 px-6 py-3 border border-slate-200 rounded-2xl text-xs font-black text-slate-400 hover:bg-slate-50 transition-all">ANNULER</button>
-            <button onClick={() => onCreate({ name, location })} className="flex-1 px-6 py-3 bg-antic-blue text-white rounded-2xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all">CRÉER</button>
-          </div>
+    <div style={{ padding:28, display:'flex', flexDirection:'column', gap:20 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div>
+          <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'#003366' }}>Antennes</h2>
+          <p style={{ fontSize:12, color:'#5a6a7e', marginTop:2 }}>{antennes.length} antenne{antennes.length>1?'s':''} régionale{antennes.length>1?'s':''}</p>
         </div>
-      </motion.div>
+        <Btn onClick={()=>setShowCreate(true)}><Plus size={14}/> Nouvelle antenne</Btn>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+        {antennes.map((a,i)=>(
+          <div key={a.id} className={`anim-fadeup delay-${Math.min(i+1,5)}`} style={{ background:'white', borderRadius:12, padding:'18px 20px', border:'1px solid #e8edf5', display:'flex', alignItems:'center', gap:14 }}>
+            <div style={{ width:42, height:42, borderRadius:10, background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <MapPin size={19} color="#0057a8"/>
+            </div>
+            <div>
+              <p style={{ fontWeight:700, fontSize:14, color:'#003366' }}>{a.name}</p>
+              <p style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>Antenne régionale</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {showCreate && (
+        <Modal title="Nouvelle antenne" onClose={()=>setShowCreate(false)} width={400}>
+          <form onSubmit={async e=>{ e.preventDefault(); try{ await api.createAntenne(name); setShowCreate(false); setName(''); onRefresh(); }catch(e:any){alert(e.message);} }} style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            <Field label="Nom" required><Inp value={name} onChange={e=>setName(e.target.value)} placeholder="ex: Antenne Kribi" required/></Field>
+            <div style={{ display:'flex', gap:10 }}><Btn variant="ghost" onClick={()=>setShowCreate(false)}>Annuler</Btn><Btn type="submit">Créer</Btn></div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 };
 
-const CreateCategoryModal: React.FC<{ onClose: () => void; onCreate: (c: Omit<Category, 'id'>) => void }> = ({ onClose, onCreate }) => {
-  const [label, setLabel] = useState('');
-  const [description, setDescription] = useState('');
-  const [icon, setIcon] = useState('FileText');
+// ─────────────────────────────────────────────────────────────────────────────
+// DASHBOARD PRINCIPAL
+// ─────────────────────────────────────────────────────────────────────────────
+export const Dashboard: React.FC<{ user: User; onLogout: () => void; onUserUpdate: (u: User) => void }> = ({
+  user, onLogout, onUserUpdate
+}) => {
+  const [activeTab, setActiveTab]   = useState<Tab>(canViewStats(user.role)?'dashboard':'dossiers');
+  const [collapsed, setCollapsed]   = useState(false);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState('');
+  const [showProfile, setShowProfile] = useState(false);
+
+  const [dossiers, setDossiers]       = useState<Dossier[]>([]);
+  const [categories, setCategories]   = useState<Category[]>([]);
+  const [antennes, setAntennes]       = useState<Antenne[]>([]);
+  const [users, setUsers]             = useState<User[]>([]);
+  const [services, setServices]       = useState<ServiceCirt[]>([]);
+  const [myPermissions, setMyPerms]   = useState<PermissionCategory[]>([]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const [d,c,a] = await Promise.all([api.getDossiers(), api.getCategories(), api.getAntennes()]);
+      setDossiers(d); setCategories(c); setAntennes(a);
+
+      // Charger ses propres permissions si agent
+      if (['agent_cirt','agent_antenne'].includes(user.role)) {
+        const perms = await api.getUserPermissions(user.id);
+        setMyPerms(perms);
+      }
+
+      if (canCreateUsers(user.role)) {
+        const [u,s] = await Promise.all([api.getUsers(), api.getServices()]);
+        setUsers(u); setServices(s);
+      }
+    } catch(e:any) { setError(e.message??'Erreur de chargement'); }
+    finally { setLoading(false); }
+  }, [user.role, user.id]);
+
+  useEffect(()=>{ loadData(); },[loadData]);
+
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f4f7fb' }}>
+      <div style={{ textAlign:'center' }}>
+        <div style={{ width:48, height:48, border:'3px solid #e8edf5', borderTop:'3px solid #0057a8', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 16px' }}/>
+        <p style={{ color:'#5a6a7e', fontSize:14 }}>Chargement…</p>
+      </div>
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f4f7fb' }}>
+      <div style={{ textAlign:'center', maxWidth:360 }}>
+        <AlertCircle size={40} color="#dc2626" style={{ margin:'0 auto 12px' }}/>
+        <p style={{ fontWeight:700, color:'#0d1b2a', marginBottom:6 }}>Erreur de connexion</p>
+        <p style={{ fontSize:13, color:'#5a6a7e', marginBottom:16 }}>{error}</p>
+        <Btn onClick={loadData}><RefreshCw size={13}/> Réessayer</Btn>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8">
-        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-6">Nouvelle Catégorie</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Libellé</label>
-            <input type="text" value={label} onChange={e => setLabel(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue" placeholder="ex: Audit de Sécurité" />
+    <div style={{ display:'flex', height:'100vh', overflow:'hidden', background:'#f4f7fb' }}>
+      <Sidebar user={user} active={activeTab} onChange={setActiveTab} onLogout={onLogout}
+        onEditProfile={()=>setShowProfile(true)} collapsed={collapsed} onToggle={()=>setCollapsed(c=>!c)}/>
+
+      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* TopBar */}
+        <header style={{ height:58, background:'white', borderBottom:'1px solid #e8edf5', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 28px', flexShrink:0 }}>
+          <h1 style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:17, color:'#003366' }}>{TAB_TITLES[activeTab]}</h1>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <button onClick={loadData} title="Actualiser"
+              style={{ background:'none', border:'1.5px solid #e8edf5', borderRadius:8, padding:'6px 8px', cursor:'pointer', color:'#5a6a7e', display:'flex', alignItems:'center' }}>
+              <RefreshCw size={13} style={{ animation:loading?'spin 1s linear infinite':'none' }}/>
+            </button>
+            <button onClick={()=>setShowProfile(true)}
+              style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px', background:'#f4f7fb', borderRadius:8, border:'1px solid #e8edf5', cursor:'pointer' }}>
+              <div style={{ width:26, height:26, borderRadius:'50%', background:'#0057a8', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:'white' }}>
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p style={{ fontSize:12, fontWeight:600, color:'#0d1b2a', lineHeight:1.2 }}>{user.name}</p>
+                <p style={{ fontSize:10, color:'#5a6a7e', lineHeight:1.2 }}>{ROLE_LABELS[user.role]}</p>
+              </div>
+              <Edit2 size={11} color="#94a3b8"/>
+            </button>
           </div>
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue h-24 resize-none" placeholder="Description de la catégorie..." />
-          </div>
-          <div>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Icône</label>
-            <select value={icon} onChange={e => setIcon(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-antic-blue/20 focus:border-antic-blue">
-              <option value="FileText">Document</option>
-              <option value="Shield">Bouclier</option>
-              <option value="Lock">Cadenas</option>
-              <option value="Search">Loupe</option>
-              <option value="Activity">Activité</option>
-            </select>
-          </div>
-          <div className="pt-4 flex gap-3">
-            <button onClick={onClose} className="flex-1 px-6 py-3 border border-slate-200 rounded-2xl text-xs font-black text-slate-400 hover:bg-slate-50 transition-all">ANNULER</button>
-            <button onClick={() => onCreate({ label, description, icon })} className="flex-1 px-6 py-3 bg-antic-blue text-white rounded-2xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all">CRÉER</button>
-          </div>
-        </div>
-      </motion.div>
+        </header>
+
+        <main style={{ flex:1, overflowY:'auto' }}>
+          {activeTab==='dashboard' && canViewStats(user.role) && <DashboardView user={user} dossiers={dossiers} categories={categories} myPermissions={myPermissions}/>}
+          {activeTab==='dossiers' && <DossiersView user={user} dossiers={dossiers} categories={categories} myPermissions={myPermissions} onRefresh={loadData}/>}
+          {activeTab==='stats' && canViewStats(user.role) && <StatsView user={user}/>}
+          {activeTab==='users' && canCreateUsers(user.role) && <UsersView user={user} users={users} antennes={antennes} services={services} categories={categories} onRefresh={loadData}/>}
+          {activeTab==='antennes' && canManageAntennes(user.role) && <AntennesView user={user} antennes={antennes} onRefresh={loadData}/>}
+          {activeTab==='organisation' && (['super_admin','admin_cirt'] as UserRole[]).includes(user.role) && (
+            <div style={{ padding:28 }}>
+              <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'#003366', marginBottom:20 }}>Organisation CIRT</h2>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {services.map(s=>(
+                  <div key={s.id} style={{ background:'white', borderRadius:10, padding:'14px 18px', border:'1px solid #e8edf5', display:'flex', alignItems:'center', gap:12 }}>
+                    <Building2 size={16} color="#0057a8"/>
+                    <div>
+                      <p style={{ fontWeight:700, fontSize:13, color:'#003366' }}>{s.name}</p>
+                      {s.sousDirection && <p style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{s.sousDirection.name}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {activeTab==='categories' && user.role==='super_admin' && (
+            <div style={{ padding:28 }}>
+              <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:20, color:'#003366', marginBottom:20 }}>Catégories</h2>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:12 }}>
+                {categories.map((c,i)=>{ const Icon=CAT_ICONS[c.name]??FileText; const color=CAT_COLORS[i%CAT_COLORS.length]; return (
+                  <div key={c.id} style={{ background:'white', borderRadius:12, padding:'16px 20px', border:'1px solid #e8edf5', display:'flex', alignItems:'center', gap:14 }}>
+                    <div style={{ width:40, height:40, borderRadius:9, background:`${color}15`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <Icon size={18} color={color}/>
+                    </div>
+                    <p style={{ fontWeight:700, fontSize:14, color:'#003366' }}>{c.name}</p>
+                  </div>
+                );})}
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {showProfile && (
+        <ModalProfile user={user} onClose={()=>setShowProfile(false)} onSaved={u=>{ onUserUpdate(u); setShowProfile(false); }}/>
+      )}
     </div>
   );
 };

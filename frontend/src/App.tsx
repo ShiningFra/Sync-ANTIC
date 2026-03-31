@@ -1,66 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence } from 'motion/react';
 import { LandingPage } from './components/LandingPage';
 import { Dashboard } from './components/Dashboard';
-import { User, View } from './types';
-import { getToken, getCurrentUser, clearToken } from './api';
+import type { User } from './types';
+import { clearToken, getToken, getCurrentUser } from './api';
 
 export default function App() {
-  const [view, setView] = useState<View>('LANDING');
-  const [user, setUser] = useState<User | null>(null);
-  const [bootstrapping, setBootstrapping] = useState(true);
+  const [user, setUser]     = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Restore session from localStorage token on mount
   useEffect(() => {
     const token = getToken();
     if (token) {
-      getCurrentUser()
-        .then((u) => {
-          setUser(u);
-          setView('DASHBOARD');
-        })
-        .catch(() => {
-          clearToken();
-        })
-        .finally(() => setBootstrapping(false));
-    } else {
-      setBootstrapping(false);
-    }
+      getCurrentUser().then(setUser).catch(()=>clearToken()).finally(()=>setLoading(false));
+    } else { setLoading(false); }
   }, []);
-
-  const handleLogin = (u: User) => {
-    setUser(u);
-    setView('DASHBOARD');
-  };
-
-  const handleLogout = () => {
-    clearToken();
-    setUser(null);
-    setView('LANDING');
-  };
 
   useEffect(() => {
-    const cb = () => handleLogout();
-    window.addEventListener('app-logout', cb);
-    return () => window.removeEventListener('app-logout', cb);
+    const handler = () => setUser(null);
+    window.addEventListener('app-logout', handler);
+    return () => window.removeEventListener('app-logout', handler);
   }, []);
 
-  if (bootstrapping) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-antic-gold border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-100 selection:bg-antic-gold selection:text-slate-900">
-      <AnimatePresence mode="wait">
-        {view === 'LANDING' && <LandingPage key="landing" onLogin={handleLogin} />}
-        {view === 'DASHBOARD' && user && (
-          <Dashboard key="dashboard" user={user} onLogout={handleLogout} />
-        )}
-      </AnimatePresence>
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#002855' }}>
+      <div style={{ width:44, height:44, border:'3px solid rgba(255,255,255,0.1)', borderTop:'3px solid #4db8ff', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
     </div>
   );
+
+  return user
+    ? <Dashboard user={user} onLogout={()=>{ clearToken(); setUser(null); }} onUserUpdate={setUser}/>
+    : <LandingPage onLogin={setUser}/>;
 }
