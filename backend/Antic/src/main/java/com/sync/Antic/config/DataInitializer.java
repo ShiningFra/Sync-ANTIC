@@ -51,11 +51,11 @@ public class DataInitializer implements CommandLineRunner {
 
         ensureService("Service Scans de Vulnérabilité",  sdSecurite);
         ensureService("Service Fermeture de Comptes",    sdSecurite);
-        ensureService("Service Preuves Numériques",      sdSecurite);
-        ensureService("Service Réquisitions",            sdJuridique);
-        ensureService("Service Veille Informationnelle", sdVeille);
-        ensureService("Service Collecte d'Actifs",       sdVeille);
-        ensureService("Service Points Focaux",           sdVeille);
+        ensureService("Service Veille Informationnelle",      sdVeille);
+        ensureService("Service Collecte d'Actifs",            sdVeille);
+        ensureService("Service Points Focaux", sdVeille);
+        ensureService("Service Réquisitions",       sdJuridique);
+        ensureService("Service Preuves Numériques",           sdSecurite);
         log.info("✅ Structure CIRT initialisée");
 
         // ── 3. Antennes ───────────────────────────────────────────────────────
