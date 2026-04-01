@@ -51,7 +51,7 @@ public class DossierService {
 
         // chef_service → dossiers assignés à son service
         if (u.isChefService() && u.getService() != null) {
-            return dossierRepo.findByServiceId(u.getService().getId());
+            return dossierRepo.findByCategoryId(u.getService().getId());
         }
 
         // agent_cirt → dossiers de son service (mêmes catégories autorisées)
@@ -59,7 +59,7 @@ public class DossierService {
             List<Long> allowedCatIds = permRepo.findByUserId(u.getId())
                 .stream().map(p -> p.getCategory().getId()).collect(Collectors.toList());
             if (allowedCatIds.isEmpty()) {
-                return dossierRepo.findByServiceId(u.getService().getId());
+                return dossierRepo.findByCategoryId(u.getService().getId());
             }
             return dossierRepo.findByServiceIdAndCategoryIdIn(u.getService().getId(), allowedCatIds);
         }
