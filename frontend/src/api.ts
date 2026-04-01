@@ -80,6 +80,17 @@ export const deleteUser = (id: number): Promise<void> =>
 
 // ── DOSSIERS ──────────────────────────────────────────────────────────────────
 export const getDossiers = (): Promise<Dossier[]> => http('GET', '/dossiers');
+
+/** Passe un dossier de EN_ATTENTE → EN_COURS (appelé quand un CIRT l'ouvre) */
+export const ouvrirDossier = (id: number): Promise<Dossier> =>
+  http('PUT', `/dossiers/${id}/ouvrir`);
+
+/** Récupère les dossiers filtrés par liste de catégories (pour chef_service et agent_cirt) */
+export const getDossiersByCategories = (categoryIds: number[]): Promise<Dossier[]> => {
+  if (categoryIds.length === 0) return Promise.resolve([]);
+  const q = categoryIds.map(id => `categoryId=${id}`).join('&');
+  return http('GET', `/dossiers/by-categories?${q}`);
+};
 export const getDossierById = (id: number): Promise<Dossier> => http('GET', `/dossiers/${id}`);
 
 export interface CreateDossierPayload {

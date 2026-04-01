@@ -14,6 +14,7 @@ import type {
 import {
   ROLE_LABELS, canCreateUsers, canCreateDossiers,
   canValidate, canArchive, canViewStats, canManageAntennes, CREATABLE_ROLES,
+  isCirtMember,
 } from '../types';
 import * as api from '../api';
 
@@ -21,9 +22,10 @@ import * as api from '../api';
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
 const STATUS_CFG: Record<DossierStatus, { label: string; bg: string; text: string; dot: string; border: string }> = {
-  EN_COURS: { label: 'En cours', bg: '#fff7ed', text: '#9a3412', dot: '#f97316', border: '#fed7aa' },
-  VALIDE:   { label: 'Validé',   bg: '#f0fdf4', text: '#14532d', dot: '#22c55e', border: '#bbf7d0' },
-  ARCHIVE:  { label: 'Archivé',  bg: '#eff6ff', text: '#1e3a8a', dot: '#3b82f6', border: '#bfdbfe' },
+  EN_ATTENTE: { label: 'En attente', bg: '#faf5ff', text: '#6b21a8', dot: '#a855f7', border: '#e9d5ff' },
+  EN_COURS:   { label: 'En cours',   bg: '#fff7ed', text: '#9a3412', dot: '#f97316', border: '#fed7aa' },
+  VALIDE:     { label: 'Validé',     bg: '#f0fdf4', text: '#14532d', dot: '#22c55e', border: '#bbf7d0' },
+  ARCHIVE:    { label: 'Archivé',    bg: '#eff6ff', text: '#1e3a8a', dot: '#3b82f6', border: '#bfdbfe' },
 };
 
 const CAT_ICONS: Record<string, React.ElementType> = {
@@ -620,10 +622,11 @@ const [previewType, setPreviewType] = useState<string>("");
   });
 
   const counts = {
-    ALL:     dossiers.length,
-    EN_COURS:dossiers.filter(d=>d.status==='EN_COURS').length,
-    VALIDE:  dossiers.filter(d=>d.status==='VALIDE').length,
-    ARCHIVE: dossiers.filter(d=>d.status==='ARCHIVE').length,
+    ALL:        dossiers.length,
+    EN_ATTENTE: dossiers.filter(d=>d.status==='EN_ATTENTE').length,
+    EN_COURS:   dossiers.filter(d=>d.status==='EN_COURS').length,
+    VALIDE:     dossiers.filter(d=>d.status==='VALIDE').length,
+    ARCHIVE:    dossiers.filter(d=>d.status==='ARCHIVE').length,
   };
 
   const act = async (fn: () => Promise<any>) => {
@@ -641,6 +644,17 @@ const [previewType, setPreviewType] = useState<string>("");
     setSelected(d);
     setDocs([]);
     loadDocs(d.id);
+
+    // Transition EN_ATTENTE → EN_COURS quand un CIRT (ou directeur antenne) ouvre le dossier
+    if (d.status === 'EN_ATTENTE' && isCirtMember(user.role)) {
+      try {
+        const updated = await api.ouvrirDossier(d.id);
+        // Mettre à jour localement immédiatement
+        setSelected(updated);
+        onRefresh();
+      } catch { /* silencieux, le dossier s'ouvre quand même */ }
+    }
+
     if (d.category?.name === SCAN_CAT_NAME) {
       setScanLoading(true);
       try {
@@ -750,7 +764,7 @@ const handleDownload = async (url, fileName) => {
 
       {/* Filtres statut */}
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-        {(['ALL','EN_COURS','VALIDE','ARCHIVE'] as const).map(s=>(
+        {(['ALL','EN_ATTENTE','EN_COURS','VALIDE','ARCHIVE'] as const).map(s=>(
           <button key={s} onClick={()=>setFS(s as any)}
             style={{ padding:'5px 13px', borderRadius:99, fontSize:12, fontWeight:600, border:filterStatus===s?'1.5px solid #0057a8':'1.5px solid #e8edf5', background:filterStatus===s?'#0057a8':'white', color:filterStatus===s?'white':'#5a6a7e', cursor:'pointer', transition:'all 0.15s' }}>
             {s==='ALL'?'Tous':STATUS_CFG[s as DossierStatus].label}
@@ -1389,20 +1403,41 @@ const [previewType, setPreviewType] = useState<string>("");
   const loadData = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [d,c,a] = await Promise.all([api.getDossiers(), api.getCategories(), api.getAntennes()]);
-      setDossiers(d); setCategories(c); setAntennes(a);
+      const [c, a] = await Promise.all([api.getCategories(), api.getAntennes()]);
+      setCategories(c); setAntennes(a);
 
-      // Charger ses propres permissions si agent
-      if (['agent_cirt','agent_antenne'].includes(user.role)) {
+      // chef_service et agent_cirt : charger les permissions PUIS filtrer les dossiers par catégories
+      if (['agent_cirt', 'agent_antenne', 'chef_service'].includes(user.role)) {
         const perms = await api.getUserPermissions(user.id);
         setMyPerms(perms);
+
+        if (['chef_service', 'agent_cirt'].includes(user.role)) {
+          // Ces rôles voient les dossiers de TOUTES les catégories autorisées,
+          // indépendamment du service_id — on filtre ici côté client
+          const allDossiers = await api.getDossiers();
+          if (perms.length === 0) {
+            // chef_service sans catégories assignées : voit tout (supervision globale)
+            setDossiers(user.role === 'chef_service' ? allDossiers : []);
+          } else {
+            const allowedCatIds = new Set(perms.map(p => p.category.id));
+            setDossiers(allDossiers.filter(d => d.category && allowedCatIds.has(d.category.id)));
+          }
+        } else {
+          // agent_antenne : getDossiers retourne déjà les siens
+          const d = await api.getDossiers();
+          setDossiers(d);
+        }
+      } else {
+        // super_admin, admin_cirt, directeur_antenne : getDossiers retourne ce qu'il faut
+        const d = await api.getDossiers();
+        setDossiers(d);
       }
 
       if (canCreateUsers(user.role)) {
-        const [u,s] = await Promise.all([api.getUsers(), api.getServices()]);
+        const [u, s] = await Promise.all([api.getUsers(), api.getServices()]);
         setUsers(u); setServices(s);
       }
-    } catch(e:any) { setError(e.message??'Erreur de chargement'); }
+    } catch(e:any) { setError(e.message ?? 'Erreur de chargement'); }
     finally { setLoading(false); }
   }, [user.role, user.id]);
 

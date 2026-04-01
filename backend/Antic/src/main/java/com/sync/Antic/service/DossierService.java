@@ -51,7 +51,7 @@ public class DossierService {
 
         // chef_service → dossiers assignés à son service
         if (u.isChefService() && u.getService() != null) {
-            return dossierRepo.findByCategoryId(u.getService().getId());
+            return dossierRepo.findByServiceId(u.getService().getId());
         }
 
         // agent_cirt → dossiers de son service (mêmes catégories autorisées)
@@ -59,7 +59,7 @@ public class DossierService {
             List<Long> allowedCatIds = permRepo.findByUserId(u.getId())
                 .stream().map(p -> p.getCategory().getId()).collect(Collectors.toList());
             if (allowedCatIds.isEmpty()) {
-                return dossierRepo.findByCategoryId(u.getService().getId());
+                return dossierRepo.findByServiceId(u.getService().getId());
             }
             return dossierRepo.findByServiceIdAndCategoryIdIn(u.getService().getId(), allowedCatIds);
         }
@@ -109,11 +109,32 @@ public class DossierService {
         d.setDescription(req.getDescription());
         d.setCategory(cat);
         d.setAntenne(u.getAntenne());
+        d.setService(serviceCirtRepo.getReferenceById(cat.getId()));
         d.setCreatedBy(u);
-        d.setStatus(Status.EN_COURS);
+        d.setStatus(Status.EN_ATTENTE);  // Soumis, en attente d'ouverture CIRT
         d.setCreatedAt(LocalDateTime.now());
 
         return dossierRepo.save(d);
+    }
+
+
+    // ── Ouvrir (EN_ATTENTE → EN_COURS) ────────────────────────────────────────
+    /**
+     * Appelé quand un membre CIRT (chef_service, agent_cirt, admin_cirt, super_admin)
+     * ouvre un dossier EN_ATTENTE. Le dossier passe EN_COURS.
+     */
+    public Dossier ouvrirDossier(Long id) {
+        User u = SecurityUtils.getCurrentUserDetails().getUser();
+        if (!u.isSuperAdmin() && !u.isAdminCirt() && !u.isChefService() && !u.isAgentCirt()) {
+            throw new RuntimeException("Droits insuffisants");
+        }
+        Dossier d = dossierRepo.findById(id)
+            .orElseThrow(() -> new RuntimeException("Dossier introuvable"));
+        if (d.getStatus() == Status.EN_ATTENTE) {
+            d.setStatus(Status.EN_COURS);
+            return dossierRepo.save(d);
+        }
+        return d; // déjà ouvert, renvoyer sans modifier
     }
 
     // ── Validation ─────────────────────────────────────────────────────────
@@ -130,7 +151,7 @@ public class DossierService {
         Dossier d = dossierRepo.findById(id)
             .orElseThrow(() -> new RuntimeException("Dossier introuvable"));
 
-        if (d.getStatus() != Status.EN_COURS) {
+        if (d.getStatus() != Status.EN_COURS && d.getStatus() != Status.EN_ATTENTE) {
             throw new RuntimeException("Seul un dossier en cours peut être validé");
         }
 
@@ -181,7 +202,7 @@ public class DossierService {
 
         // L'agent antenne peut supprimer ses propres dossiers EN_COURS
         if (u.isAgentAntenne() && d.getCreatedBy().getId().equals(u.getId())) {
-            if (d.getStatus() != Status.EN_COURS) {
+            if (d.getStatus() != Status.EN_COURS && d.getStatus() != Status.EN_ATTENTE) {
                 throw new RuntimeException("Vous ne pouvez supprimer qu'un dossier en cours");
             }
             dossierRepo.deleteById(id);

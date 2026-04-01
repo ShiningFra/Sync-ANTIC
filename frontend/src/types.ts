@@ -58,7 +58,7 @@ export interface PermissionCategory {
 }
 
 // ── Statuts dossier ───────────────────────────────────────────────────────────
-export type DossierStatus = 'EN_COURS' | 'VALIDE' | 'ARCHIVE';
+export type DossierStatus = 'EN_ATTENTE' | 'EN_COURS' | 'VALIDE' | 'ARCHIVE';
 
 // ── Étape ─────────────────────────────────────────────────────────────────────
 export interface Etape {
