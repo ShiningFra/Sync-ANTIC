@@ -56,7 +56,7 @@ function getVisibleCategories(
   allCategories: Category[],
   myPermissions: PermissionCategory[]
 ): Category[] {
-  if (['super_admin', 'admin_cirt', 'chef_service', 'directeur_antenne'].includes(user.role)) {
+  if (['super_admin', 'admin_cirt', /*'chef_service',*/ 'directeur_antenne'].includes(user.role)) {
     return allCategories;
   }
   // agent_cirt ou agent_antenne : filtré par permissions
