@@ -1,15 +1,8 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package com.sync.Antic.entity;
 
-/**
- *
- * @author berna
- */
 public enum Status {
-    EN_COURS,
+    EN_ATTENTE,  // Dossier soumis par l'antenne, pas encore ouvert par le CIRT
+    EN_COURS,    // Ouvert/pris en charge par le CIRT
     VALIDE,
     ARCHIVE
 }
