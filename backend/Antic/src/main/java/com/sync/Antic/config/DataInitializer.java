@@ -45,11 +45,11 @@ public class DataInitializer implements CommandLineRunner {
         log.info("✅ 6 rôles initialisés");
 
         // ── 2. Structure CIRT ─────────────────────────────────────────────────
-        SousDirection sdSecurite  = ensureSousDirection("Sous-direction Sécurité des SI");
+        SousDirection sdSecurite  = ensureSousDirection("Sous-direction de la securite Reactive");
         SousDirection sdJuridique = ensureSousDirection("Sous-direction Juridique et Réquisitions");
         SousDirection sdVeille    = ensureSousDirection("Sous-direction Veille et Intelligence");
 
-        ensureService("Service Scans de Vulnérabilité",  sdSecurite);
+        ensureService("Service de la Securite Proactive",  sdSecurite);
         ensureService("Service Fermeture de Comptes",    sdSecurite);
         ensureService("Service Veille Informationnelle",      sdVeille);
         ensureService("Service Collecte d'Actifs",            sdVeille);
