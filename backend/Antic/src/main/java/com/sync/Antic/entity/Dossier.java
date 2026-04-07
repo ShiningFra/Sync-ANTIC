@@ -27,7 +27,6 @@ public class Dossier {
     @JoinColumn(name = "antenne_id", nullable = false)
     private Antenne antenne;
 
-    /** Service CIRT responsable du traitement (optionnel - assigné par CIRT) */
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "service_id")
     private ServiceCirt service;
@@ -44,6 +43,43 @@ public class Dossier {
     @JoinColumn(name = "archived_by")
     private User archivedBy;
 
+    /**
+     * Niveau de sécurité :
+     * SECRET_PRIVE  = seul le créateur voit.
+     * ANTENNE_PRIVE = directeur antenne + CIRT.
+     * ANTENNE_PUBLIC = tous les agents de l'antenne (avec catégorie).
+     * CIRT_ONLY = CIRT uniquement.
+     * PUBLIC = défaut.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private SecurityLevel securityLevel = SecurityLevel.PUBLIC;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "security_set_by")
+    private User securitySetBy;
+
+    @Column(nullable = false)
+    private boolean syncedToCirt = false;
+
+    @Column(nullable = false)
+    private boolean stamped = false;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "stamped_by")
+    private User stampedBy;
+
+    private LocalDateTime stampedAt;
+
+    @Column(nullable = false)
+    private boolean sealed = false;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "sealed_by")
+    private User sealedBy;
+
+    private LocalDateTime sealedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Status status = Status.EN_COURS;
@@ -54,12 +90,10 @@ public class Dossier {
     private LocalDateTime validatedAt;
     private LocalDateTime archivedAt;
 
-    // Les étapes sont chargées à la demande (lazy) pour éviter les boucles
     @OneToMany(mappedBy = "dossier", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonIgnore
     private List<Etape> etapes;
 
-    // Getters & Setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getTitle() { return title; }
@@ -78,6 +112,24 @@ public class Dossier {
     public void setValidatedBy(User validatedBy) { this.validatedBy = validatedBy; }
     public User getArchivedBy() { return archivedBy; }
     public void setArchivedBy(User archivedBy) { this.archivedBy = archivedBy; }
+    public SecurityLevel getSecurityLevel() { return securityLevel; }
+    public void setSecurityLevel(SecurityLevel securityLevel) { this.securityLevel = securityLevel; }
+    public User getSecuritySetBy() { return securitySetBy; }
+    public void setSecuritySetBy(User securitySetBy) { this.securitySetBy = securitySetBy; }
+    public boolean isSyncedToCirt() { return syncedToCirt; }
+    public void setSyncedToCirt(boolean syncedToCirt) { this.syncedToCirt = syncedToCirt; }
+    public boolean isStamped() { return stamped; }
+    public void setStamped(boolean stamped) { this.stamped = stamped; }
+    public User getStampedBy() { return stampedBy; }
+    public void setStampedBy(User stampedBy) { this.stampedBy = stampedBy; }
+    public LocalDateTime getStampedAt() { return stampedAt; }
+    public void setStampedAt(LocalDateTime stampedAt) { this.stampedAt = stampedAt; }
+    public boolean isSealed() { return sealed; }
+    public void setSealed(boolean sealed) { this.sealed = sealed; }
+    public User getSealedBy() { return sealedBy; }
+    public void setSealedBy(User sealedBy) { this.sealedBy = sealedBy; }
+    public LocalDateTime getSealedAt() { return sealedAt; }
+    public void setSealedAt(LocalDateTime sealedAt) { this.sealedAt = sealedAt; }
     public Status getStatus() { return status; }
     public void setStatus(Status status) { this.status = status; }
     public LocalDateTime getCreatedAt() { return createdAt; }

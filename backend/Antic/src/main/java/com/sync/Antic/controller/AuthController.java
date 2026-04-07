@@ -1,7 +1,9 @@
 package com.sync.Antic.controller;
 
+import com.sync.Antic.entity.ActivityLog.ActionType;
 import com.sync.Antic.entity.User;
 import com.sync.Antic.repository.UserRepository;
+import com.sync.Antic.service.ActivityLogService;
 import com.sync.Antic.service.JwtService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -15,9 +17,10 @@ import java.util.Map;
 @RequestMapping("/auth")
 public class AuthController {
 
-    @Autowired private UserRepository  userRepo;
-    @Autowired private JwtService      jwtService;
-    @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private UserRepository     userRepo;
+    @Autowired private JwtService         jwtService;
+    @Autowired private PasswordEncoder    passwordEncoder;
+    @Autowired private ActivityLogService activityLogService;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
@@ -29,8 +32,7 @@ public class AuthController {
         if (password == null || password.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "Mot de passe requis"));
 
-        User user = userRepo.findByEmail(email)
-            .orElse(null);
+        User user = userRepo.findByEmail(email).orElse(null);
 
         if (user == null || user.getPassword() == null)
             return ResponseEntity.status(401).body(Map.of("error", "Identifiants incorrects"));
@@ -43,11 +45,13 @@ public class AuthController {
 
         String token = jwtService.generateToken(user);
 
-        // Retourne le token + les infos de l'utilisateur pour le frontend
+        // Log connexion (sans mot de passe)
+        activityLogService.log(user, ActionType.LOGIN, "User", user.getId(), user.getName(),
+            "Connexion de '" + user.getName() + "' (" + user.getEmail() + ") — rôle: " + user.getRoleName());
+
         Map<String, Object> response = new HashMap<>();
         response.put("token", token);
         response.put("user", buildUserProfile(user));
-
         return ResponseEntity.ok(response);
     }
 
@@ -57,6 +61,10 @@ public class AuthController {
         profile.put("name", u.getName());
         profile.put("email", u.getEmail());
         profile.put("role", u.getRoleName());
+        profile.put("active", u.isActive());
+        profile.put("isSuperAdmin", u.isSuperAdmin());
+        profile.put("isDirecteur", u.isDirecteur());
+        profile.put("isTopLevel", u.isTopLevel());
 
         if (u.getAntenne() != null) {
             Map<String, Object> antenne = new HashMap<>();
