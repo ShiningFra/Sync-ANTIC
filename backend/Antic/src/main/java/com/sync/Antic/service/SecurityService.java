@@ -1,33 +1,45 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package com.sync.Antic.service;
 
 import com.sync.Antic.entity.*;
 import org.springframework.stereotype.Service;
 
 /**
- *
- * @author berna
+ * Utilitaires de contrôle d'accès.
+ * Hiérarchie : super_admin > directeur > admin_cirt > chef_service/agent_cirt
+ *                                      > directeur_antenne > agent_antenne
  */
 @Service
 public class SecurityService {
 
     public boolean canAccessDossier(User user, Dossier dossier) {
+        // super_admin et directeur voient tout
+        if (user.isTopLevel()) return true;
 
-        String role = user.getRole().getName();
-
-        if (role.equals("super_admin") || role.equals("admin_cirt")) {
-            return true;
+        // admin_cirt voit tout sauf SECRET_PRIVE d'autrui
+        if (user.isAdminCirt()) {
+            return dossier.getSecurityLevel() != SecurityLevel.SECRET_PRIVE
+                || isCreator(dossier, user);
         }
 
-        if (role.equals("directeur_antenne")) {
-            return dossier.getAntenne().getId()
-                    .equals(user.getAntenne().getId());
+        // chef_service / agent_cirt : uniquement les dossiers synchronisés
+        if (user.isChefService() || user.isAgentCirt()) {
+            return dossier.isSyncedToCirt()
+                && dossier.getSecurityLevel() != SecurityLevel.SECRET_PRIVE;
         }
 
-        return dossier.getCreatedBy().getId()
-                .equals(user.getId());
+        // directeur_antenne : son antenne, sauf SECRET_PRIVE d'autrui
+        if (user.isDirecteurAntenne()) {
+            return user.getAntenne() != null
+                && dossier.getAntenne() != null
+                && user.getAntenne().getId().equals(dossier.getAntenne().getId())
+                && (dossier.getSecurityLevel() != SecurityLevel.SECRET_PRIVE || isCreator(dossier, user));
+        }
+
+        // agent_antenne : ses dossiers propres
+        return isCreator(dossier, user);
+    }
+
+    private boolean isCreator(Dossier d, User u) {
+        return d.getCreatedBy() != null && d.getCreatedBy().getId().equals(u.getId());
     }
 }
